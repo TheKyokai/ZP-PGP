@@ -4,6 +4,7 @@ from tkinter import ttk, filedialog
 
 class App:
 
+    #TODO Spusti ovo ispod konstruktora
     def choose_file(self):
         filename = filedialog.askopenfilename(title="Izaberi fajl")
 
@@ -134,9 +135,9 @@ class App:
         )
         self.send_3des_radio = ttk.Radiobutton(
             left_panel,
-            text='3DES',
+            text='CAST5',
             variable=self.send_enc_algorithm,
-            value='3DES'
+            value='CAST5'
         )
         self.send_aes_radio.configure(state='disabled')
         self.send_aes_radio.pack(anchor="w", pady=5)
@@ -181,10 +182,11 @@ class App:
         options = {
             "sign": self.send_sign_bool.get(),
             "sign_key": self.sign_private_key_options.get() if self.send_sign_bool.get() else None,
+            "sign_key_password": "Miki",
             "zip": self.send_zip_bool.get(),
             "encrypt": self.send_encrypt_bool.get(),
             "enc_public_key": self.encrypt_public_key_options.get() if self.send_encrypt_bool.get() else None,
-            "enc_elgorithm": self.send_enc_algorithm.get() if self.send_encrypt_bool.get() else None,
+            "enc_algorithm": self.send_enc_algorithm.get() if self.send_encrypt_bool.get() else None,
             "radix64": self.send_radix64_bool.get(),
         }
 
@@ -212,7 +214,6 @@ class App:
             self.sign_private_key_options.configure(state="readonly")
         else:
             self.sign_private_key_options.configure(state="disabled")
-
 
     def start(self):
         self.root.mainloop()
