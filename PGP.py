@@ -86,7 +86,6 @@ class PGP:
         return True
 
 
-
     def generate_signature(self, message, options):
         digest = hashlib.sha1(message.encode("utf-8")).digest()
 
@@ -96,7 +95,7 @@ class PGP:
                 pk_row = row
                 break
         if pk_row is None:
-            raise Exception
+            raise Exception("Key does not exist")
 
         password_hash = hashlib.sha1(options["sign_key_password"].encode("utf-8")).digest()
         cast_key = password_hash[0:16]
@@ -151,7 +150,7 @@ class PGP:
         pass
 
 
-    def generate_key_pair(self, email, password, length):
+    def generate_key_pair(self, name, email, password, length):
         key_pair = RSA.generate(length)
 
         timestamp = int(time.time())
@@ -170,14 +169,17 @@ class PGP:
             "KeyID": key_id,
             "PublicKey": rsa_public_key,
             "EncPrivateKey": enc_private_key,
-            "UserID": email
+            "UserEmail": email,
+            "Username": name
         }
 
         public_key_row = {
             "Timestamp": timestamp,
             "KeyID": key_id,
             "PublicKey": rsa_public_key,
-            "UserID": email
+            "UserID": email,
+            "UserEmail": email,
+            "Username": name
         }
 
         self.private_key_ring.append(private_key_row)
@@ -187,11 +189,14 @@ class PGP:
 
 
     def load_key_rings(self, filename=".key_storage.json"):
-        with open(filename, "r") as f:
-            try:
-                data = json.load(f)
-            except json.decoder.JSONDecodeError:
-                return
+        try:
+            with open(filename, "r") as f:
+                try:
+                    data = json.load(f)
+                except json.decoder.JSONDecodeError:
+                    return
+        except FileNotFoundError:
+            return
 
         self.private_key_ring = []
         self.public_key_ring = []
@@ -202,7 +207,8 @@ class PGP:
             self.private_key_ring.append({
                 "Timestamp": item["Timestamp"],
                 "KeyID": item["KeyID"],
-                "UserID": item["UserID"],
+                "UserEmail": item["UserEmail"],
+                "Username": item["Username"],
                 "PublicKey": base64.b64decode(item["PublicKey"]),
                 "EncPrivateKey": base64.b64decode(item["EncPrivateKey"])
             })
@@ -211,7 +217,8 @@ class PGP:
             self.public_key_ring.append({
                 "Timestamp": item["Timestamp"],
                 "KeyID": item["KeyID"],
-                "UserID": item["UserID"],
+                "UserEmail": item["UserEmail"],
+                "Username": item["Username"],
                 "PublicKey": base64.b64decode(item["PublicKey"])
             })
 
@@ -225,7 +232,8 @@ class PGP:
             data["private_key_ring"].append({
                 "Timestamp": item["Timestamp"],
                 "KeyID": item["KeyID"],
-                "UserID": item["UserID"],
+                "UserEmail": item["UserEmail"],
+                "Username": item["Username"],
                 "PublicKey": base64.b64encode(
                     item["PublicKey"] if isinstance(item["PublicKey"], bytes)
                     else str(item["PublicKey"]).encode()
@@ -237,7 +245,8 @@ class PGP:
             data["public_key_ring"].append({
                 "Timestamp": item["Timestamp"],
                 "KeyID": item["KeyID"],
-                "UserID": item["UserID"],
+                "UserEmail": item["UserEmail"],
+                "Username": item["Username"],
                 "PublicKey": base64.b64encode(
                     item["PublicKey"] if isinstance(item["PublicKey"], bytes)
                     else str(item["PublicKey"]).encode()
@@ -250,17 +259,18 @@ class PGP:
 
 
 if __name__ == "__main__":
-    pgp = PGP()
-
-    private_row, public_row = pgp.generate_key_pair(email="dule@gmail.com", password="Lozinkica", length=1024)
-    pgp.send_message("ima žaba",
-                     {
-                         "sign": False,
-                         "sign_key": private_row["KeyID"],
-                         "sign_key_password": "Lozinkica",
-                         "encrypt": True,
-                         "enc_public_key": private_row["KeyID"],
-                         "enc_algorithm": "AES128",
-                         "zip": False,
-                         "radix64": True}, "test.pgp")
+    pass
+    # pgp = PGP()
+    #
+    # private_row, public_row = pgp.generate_key_pair(email="dule@gmail.com", password="Lozinkica", length=1024)
+    # pgp.send_message("ima žaba",
+    #                  {
+    #                      "sign": False,
+    #                      "sign_key": private_row["KeyID"],
+    #                      "sign_key_password": "Lozinkica",
+    #                      "encrypt": True,
+    #                      "enc_public_key": private_row["KeyID"],
+    #                      "enc_algorithm": "AES128",
+    #                      "zip": False,
+    #                      "radix64": True}, "test.pgp")
 
