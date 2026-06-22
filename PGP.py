@@ -1,3 +1,4 @@
+import ast
 import base64
 import hashlib
 import json
@@ -70,7 +71,6 @@ class PGP:
             packet_info += "\nZIPPED:No\n"
         packet_info += "\n--PACKET INFO END--\n"
 
-        # TODO Pazi na kodovanje kad citas (Radix64 -> ASCII, Binary)
         # RADIX64 Conversion
         if options["radix64"]:
             full_msg = base64.b64encode(full_msg).decode("ascii")
@@ -143,11 +143,146 @@ class PGP:
 
         return enc_message, enc_session_key.to_bytes((enc_session_key.bit_length() + 7) // 8), initial_value
 
+    def read_packet_info(self, filename, read_options, ending_line, decode_option):
+        options = {}
+        with open(filename, read_options) as in_file:
+            in_file.readline()
+            line = in_file.readline()
+            while line != ending_line:
+                if decode_option is not None:
+                    line = line.decode(decode_option)
+                line = line.split(':')
+                if len(line) < 2:
+                    line = in_file.readline()
+                    continue
+                options[line[0].lower()] = ':'.join(line[1:]).strip()
+                if line[1].strip() == "No":
+                    options[line[0].lower()] = False
+                elif line[1].strip() == "Yes":
+                    options[line[0].lower()] = True
+                line = in_file.readline()
+
+            #reads the rest of the file for decrypting
+            content = in_file.read()
+
+        return options, content
+
+    def decrypt_message(self, message, options, password):
+        #finding the private key for decrypting
+        private_row = None
+        for item in self.private_key_ring:
+            if item["KeyID"] == int(options["key_id"]):
+                private_row = item
+                break
+
+        if private_row is None:
+            raise Exception("Private key does not exist")
+
+        #the private key needs to be decrypted
+        password_hash = hashlib.sha1(password.encode("utf-8")).digest()
+        cast_key = password_hash[0:16]
+        cast_cipher = CAST.new(cast_key, CAST.MODE_ECB)
+        try:
+            rsa_private_key = unpad(cast_cipher.decrypt(private_row["EncPrivateKey"]), CAST.block_size)
+        except ValueError:
+            raise Exception("Incorrect password - noticed due to unpadding issue")
+
+        rsa_private_key = RSA.importKey(rsa_private_key)
+
+        # now the session key can be decrypted
+        enc_session_key = options["encrypted_session_key"]
+        e_bytes = ast.literal_eval(enc_session_key)
+        print(f"type: {type(e_bytes)}")
+        print(f"{e_bytes}")
+        enc_session_key = int.from_bytes(e_bytes)
+        print(f"enc_session_key: {enc_session_key}")
+        session_key = pow(enc_session_key, rsa_private_key.d, rsa_private_key.n).to_bytes(length = 16)
+        print(f"session_key: {session_key}")
+
+        initial_value = ast.literal_eval(options["iv"])
+        if options['alg'] == "CAST5":
+            cipher = CAST.new(session_key, CAST.MODE_CBC, initial_value)
+            dec_message = unpad(cipher.decrypt(message), CAST.block_size)
+        elif options['alg'] == "AES128":
+            cipher = AES.new(session_key, AES.MODE_CBC, initial_value)
+            dec_message = unpad(cipher.decrypt(message), AES.block_size)
+        else:
+            raise Exception("Unknown encryption algorithm")
+
+        print(f"dec_message: {dec_message}")
+        return dec_message
+
+    def verify_signature(self, key_id, signature, content):
+        #decrypt the signature and hash the content then compare
+        digest = hashlib.sha1(content.encode("utf-8")).digest()
+        digest = int.from_bytes(digest)
+        pk_row = None
+        for row in self.public_key_ring:
+            if row["KeyID"] == int(key_id):
+                pk_row = row
+                break
+        if pk_row is None:
+            raise Exception("Key does not exist")
+        rsa_public_key = RSA.importKey(pk_row["PublicKey"])
+        dec_signature = pow(int(signature), rsa_public_key.e, rsa_public_key.n)
+        print(f"dec_signature: {dec_signature}")
+        print(f"digest: {digest}")
+        return dec_signature == digest
 
 
-    # TODO
-    def receive_message(self, message):
-        pass
+
+    def receive_message(self, filename, password):
+        options = {}
+
+        with open(filename, 'rb') as in_file:
+            # reading first line for encoding
+            line = in_file.readline()
+            if line == b'PGP-R64\r\n':
+                 print("RADIX")
+                 radix64 = True
+                 read_option = "r"
+                 ending_line = '--PACKET INFO END--\n'
+                 decode_option = None
+            elif line == b'PGP-BIN\r\n':
+                print("BINARNO")
+                radix64 = False
+                read_option = "rb"
+                ending_line = b'--PACKET INFO END--\n'
+                decode_option = "ascii"
+            else:
+                raise Exception("Invalid encoding")
+
+        #reading line by line for recreating encrypting options
+        options, content = self.read_packet_info(filename, read_option, ending_line, decode_option)
+
+        # Radix read to bytes
+        if radix64:
+            content = base64.b64decode(content.encode("ascii"))
+
+        #Decryption
+        if options["encrypted"]:
+            content = self.decrypt_message(content, options, password)
+
+        #unzipping
+        if options['zipped']:
+            content = zlib.decompress(content)
+        content = content.decode("utf-8")
+
+        #signing
+        content_rows = content.split("\n")
+        verified = True
+        #first have to parse for signing options
+        if options['signed']:
+            key_id = content_rows[1].split(":")[1]
+            signature = content_rows[2].split(":")[1]
+            content = "\n".join(content_rows[5:-1])
+            print(key_id)
+            print(signature)
+            print(content)
+            verified = self.verify_signature(key_id, signature, content)
+        else:
+            content = "\n".join(content_rows[1:-1])
+        return content, verified
 
 
     def generate_key_pair(self, name, email, password, length):

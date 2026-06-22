@@ -6,7 +6,36 @@ from PGP import PGP
 
 class App:
 
-    #TODO Spusti ovo ispod konstruktora
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("PGP App")
+        self.root.geometry("1200x700")
+
+        self.pgp = PGP()
+
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill="both", expand=True)
+
+        # Tabs
+        self.send_tab = ttk.Frame(self.notebook)
+        self.receive_tab = ttk.Frame(self.notebook)
+        self.public_ring_tab = ttk.Frame(self.notebook)
+        self.private_ring_tab = ttk.Frame(self.notebook)
+
+
+        self.notebook.add(self.send_tab, text="Slanje")
+        self.notebook.add(self.receive_tab, text="Prijem")
+        self.notebook.add(self.public_ring_tab, text="Javni Prsten")
+        self.notebook.add(self.private_ring_tab, text="Privatni Prsten")
+
+        self.configure_send_tab()
+        self.configure_receive_tab()
+
+        # Placeholder
+        ttk.Label(self.public_ring_tab, text="Javni Prsten").pack(pady=20)
+
+        self.configure_private_ring_tab()
+
     def choose_file(self):
         filename = filedialog.askopenfilename(title="Izaberi fajl")
 
@@ -29,9 +58,9 @@ class App:
             ttk.Button(popup, text="OK", command=popup.destroy).pack()
             return
 
-        #TODO ovde ne treba samo da se dohvati ime nego da se pozove funkcija za citanje
-        decrypted_message = self.file_label.cget("text")
-        verified = True
+        password = self.prompt_password()
+
+        decrypted_message, verified = self.pgp.receive_message(self.file, password)
 
         if verified:
             bg_color = "#C3FCBB"
@@ -66,37 +95,6 @@ class App:
         self.message_text.grid(row=4, column=1)
         self.message_text.insert(tk.INSERT, "")
         self.message_text.config(state="disabled")
-
-    def __init__(self):
-        self.root = tk.Tk()
-        self.root.title("PGP App")
-        self.root.geometry("1200x700")
-
-        self.pgp = PGP()
-
-        self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill="both", expand=True)
-
-        # Tabs
-        self.send_tab = ttk.Frame(self.notebook)
-        self.receive_tab = ttk.Frame(self.notebook)
-        self.public_ring_tab = ttk.Frame(self.notebook)
-        self.private_ring_tab = ttk.Frame(self.notebook)
-
-
-        self.notebook.add(self.send_tab, text="Slanje")
-        self.notebook.add(self.receive_tab, text="Prijem")
-        self.notebook.add(self.public_ring_tab, text="Javni Prsten")
-        self.notebook.add(self.private_ring_tab, text="Privatni Prsten")
-
-        self.configure_send_tab()
-        self.configure_receive_tab()
-
-        # Placeholder
-        ttk.Label(self.public_ring_tab, text="Javni Prsten").pack(pady=20)
-
-        self.configure_private_ring_tab()
-
 
     def configure_send_tab(self):
         # Send tab layout container
@@ -275,7 +273,6 @@ class App:
             self.sign_private_key_options.configure(state="readonly")
         else:
             self.sign_private_key_options.configure(state="disabled")
-
 
 
     def configure_private_ring_tab(self):
