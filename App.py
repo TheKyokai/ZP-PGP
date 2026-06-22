@@ -30,10 +30,7 @@ class App:
 
         self.configure_send_tab()
         self.configure_receive_tab()
-
-        # Placeholder
-        ttk.Label(self.public_ring_tab, text="Javni Prsten").pack(pady=20)
-
+        self.configure_public_ring_tab()
         self.configure_private_ring_tab()
 
     def choose_file(self):
@@ -75,7 +72,13 @@ class App:
 
 
         if verified:
-            ttk.Button(self.receive_tab, text="Izaberi destinaciju", command=self.choose_file, width=20).grid(row=10, column=0, pady=10)
+            #TODO ovde ne ide choose file nego da samo nadje destinaciju i ime za postojeci fajl
+            save_button = ttk.Button(
+                self.receive_tab,
+                text="Izaberi destinaciju",
+                command=self.choose_file,
+                width=20)
+            save_button.grid(row=10, column=0, pady=10)
             self.file_destination_label = ttk.Label(self.receive_tab, text="Nijedan fajl nije izabran")
             self.file_destination_label.grid(row=10, column=1)
             ttk.Button(self.receive_tab, text="Sacuvaj", command=self.save, width=20).grid(row=11, column=0, pady=10)
@@ -86,13 +89,24 @@ class App:
         self.file = None
         self.file_destination_label = None
 
-        ttk.Button(self.receive_tab, text="Izaberi fajl", command=self.choose_file, width=20).grid(row=1, column=0, pady=10)
+        receive_button = ttk.Button(
+            self.receive_tab,
+            text="Izaberi fajl",
+            command=self.choose_file,
+            width=20)
+        receive_button.grid(row=1, column=0, pady=10)
+
         self.file_label = ttk.Label(self.receive_tab, text="Nijedan fajl nije izabran")
         self.file_label.grid(row=1, column=1)
-        ttk.Button(self.receive_tab, text="Procitaj", command = self.decrypt, width=20).grid(row=2, column=0, pady=10)
+
+        read_button = ttk.Button(self.receive_tab,
+                   text="Procitaj",
+                   command = self.decrypt,
+                   width=20)
+        read_button.grid(row=2, column=0, pady=10)
 
         self.message_text = tk.Text(self.receive_tab, width=100, height=5)
-        self.message_text.grid(row=4, column=1)
+        self.message_text.grid(row=4, column=0, sticky="ew", columnspan = 3)
         self.message_text.insert(tk.INSERT, "")
         self.message_text.config(state="disabled")
 
@@ -274,6 +288,68 @@ class App:
         else:
             self.sign_private_key_options.configure(state="disabled")
 
+    def show_private_keys(self):
+        table = ttk.Treeview(
+            self.private_key_bottom_panel,
+            columns=("name", "email", "keyid"),
+            show="headings"
+        )
+
+        table.heading("name", text="Ime")
+        table.heading("email", text="Email")
+        table.heading("keyid", text="Key ID")
+
+        table.grid(row=0, column=0)
+
+        for row in self.pgp.private_key_ring:
+            if row["Username"] == self.name_entry.get() and row["UserEmail"] == self.email_entry.get():
+                table.insert("", tk.END, values = (row["Username"], row["UserEmail"], row["KeyID"]))
+
+    def show_public_keys(self, public_ring_container):
+
+        table = ttk.Treeview(
+            public_ring_container,
+            columns=("name", "email", "keyid"),
+            show="headings"
+        )
+
+        table.heading("name", text="Ime")
+        table.heading("email", text="Email")
+        table.heading("keyid", text="Key ID")
+
+        table.grid(row=1, column=0, sticky="nsew", columnspan=2)
+
+        for row in self.pgp.public_key_ring:
+            table.insert("", tk.END, values=(row["Username"], row["UserEmail"], row["KeyID"]))
+
+
+    def configure_public_ring_tab(self):
+
+        public_ring_container = ttk.Frame(self.public_ring_tab)
+        public_ring_container.pack(fill="both", expand=True)
+
+        public_ring_container.rowconfigure(0, weight=1)
+        public_ring_container.rowconfigure(1, weight=4)
+        public_ring_container.columnconfigure(0, weight=1)
+        public_ring_container.columnconfigure(1, weight=1)
+
+        import_keys_button = ttk.Button(
+            public_ring_container,
+            padding=10,
+            text="Uvezi ključeve"
+            #TODO dodati komandu i funkciju
+        )
+        import_keys_button.grid(row=0, column=0)
+
+        export_keys_button = ttk.Button(
+            public_ring_container,
+            padding=10,
+            text="Izvezi ključeve"
+            # TODO dodati komandu i funkciju
+        )
+        export_keys_button.grid(row=0, column=1)
+
+        self.show_public_keys(public_ring_container)
 
     def configure_private_ring_tab(self):
         pr_container = ttk.Frame(self.private_ring_tab)
@@ -288,23 +364,18 @@ class App:
         top_panel.grid(row=0, column=0, sticky="nsew")
         top_panel.columnconfigure(0, weight=1)
         top_panel.columnconfigure(1, weight=1)
-        top_panel.columnconfigure(2, weight=1)
         top_panel.rowconfigure(0, weight=1)
 
         # Bottom panel
-        bottom_panel = ttk.Frame(pr_container)
-        bottom_panel.grid(row=1, column=0, sticky="nsew")
+        self.private_key_bottom_panel = ttk.Frame(pr_container)
+        self.private_key_bottom_panel.grid(row=1, column=0, sticky="nsew")
 
         # Control panel content
         top_left_panel = ttk.Frame(top_panel)
         top_left_panel.grid(row=0, column=0, sticky="nsew")
 
-        top_mid_panel = ttk.Frame(top_panel)
-        top_mid_panel.grid(row=0, column=1, sticky="nsew")
-
         top_right_panel = ttk.Frame(top_panel)
-        top_right_panel.grid(row=0, column=2, sticky="nsew")
-
+        top_right_panel.grid(row=0, column=1, sticky="nsew")
 
         # Name and email
         top_left_panel.columnconfigure(0, weight=1)
@@ -317,25 +388,23 @@ class App:
         self.email_entry = ttk.Entry(top_left_panel)
         self.email_entry.grid(row=3, column=0, sticky="ew", padx=5)
 
-
-
         # Key size
         self.key_size_var = tk.IntVar(value=2048)
 
-        ttk.Label(top_mid_panel, text="Veličina ključa:").grid(row=0, column=1, sticky="w")
+        ttk.Label(top_right_panel, text="Veličina ključa:").grid(row=1, column=0, sticky="w")
         ttk.Radiobutton(
-            top_mid_panel,
+            top_right_panel,
             text="1024",
             variable=self.key_size_var,
             value=1024
-        ).grid(row=1, column=0, sticky="w")
+        ).grid(row=2, column=0, sticky="w")
 
         ttk.Radiobutton(
-            top_mid_panel,
+            top_right_panel,
             text="2048",
             variable=self.key_size_var,
             value=2048
-        ).grid(row=2, column=0, sticky="w")
+        ).grid(row=3, column=0, sticky="w")
 
 
         # Generate button
@@ -344,12 +413,18 @@ class App:
             text="Generišite ključ",
             command=self.generate_key
         )
-        generate_key_button.pack()
+        generate_key_button.grid(row=4, column=0, sticky="w")
 
+        #Show private ring button
+        show_button = ttk.Button(
+            top_left_panel,
+            text = "Prikaz mojih ključeva",
+            command = self.show_private_keys
+        )
+        show_button.grid(column=0, row=5, padx=5)
 
         # Bottom panel contents
-        send_text_area = tk.Text(bottom_panel, wrap="word")
-        send_text_area.pack(fill="both", expand=True)
+
 
 
     def generate_key(self):
