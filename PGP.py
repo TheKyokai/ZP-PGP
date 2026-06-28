@@ -21,7 +21,8 @@ class PGP:
         self.load_key_rings()
 
     def send_message(self, message, options, filename):
-        full_msg = "--MESSAGE CONTENTS--\n" + message + "\n--MESSAGE CONTENTS END--"
+        full_msg = f"TIMESTAMP:{int(time.time())}\n"
+        full_msg += "--MESSAGE CONTENTS--\n" + message + "\n--MESSAGE CONTENTS END--"
 
         # Signing
         if options["sign"]:
@@ -85,7 +86,6 @@ class PGP:
                 out_file.write(full_msg)
         return True
 
-
     def generate_signature(self, message, options):
         digest = hashlib.sha1(message.encode("utf-8")).digest()
 
@@ -143,6 +143,7 @@ class PGP:
 
         return enc_message, enc_session_key.to_bytes((enc_session_key.bit_length() + 7) // 8), initial_value
 
+    # TODO Dodaj prikazivanje timestampa i dobro parisanje poruke
     def read_packet_info(self, filename, read_options, ending_line, decode_option):
         options = {}
         with open(filename, read_options) as in_file:
@@ -171,7 +172,7 @@ class PGP:
         #finding the private key for decrypting
         private_row = None
         for item in self.private_key_ring:
-            if item["KeyID"] == int(options["key_id"]):
+            if item["KeyID"] == options["key_id"]:
                 private_row = item
                 break
 
@@ -218,7 +219,7 @@ class PGP:
         digest = int.from_bytes(digest)
         pk_row = None
         for row in self.public_key_ring:
-            if row["KeyID"] == int(key_id):
+            if row["KeyID"] == key_id:
                 pk_row = row
                 break
         if pk_row is None:
@@ -229,21 +230,20 @@ class PGP:
         print(f"digest: {digest}")
         return dec_signature == digest
 
-
-
     def receive_message(self, filename, password):
         options = {}
 
         with open(filename, 'rb') as in_file:
             # reading first line for encoding
             line = in_file.readline()
-            if line == b'PGP-R64\r\n':
+            # TODO Pogledaj ovo morao sam da menjam malo da bi mi radilo jer nije htelo za bin file
+            if line == b'PGP-R64\r\n' or line == b'PGP-R64\n':
                  print("RADIX")
                  radix64 = True
                  read_option = "r"
                  ending_line = '--PACKET INFO END--\n'
                  decode_option = None
-            elif line == b'PGP-BIN\r\n':
+            elif line == b'PGP-BIN\r\n' or line == b'PGP-BIN\n':
                 print("BINARNO")
                 radix64 = False
                 read_option = "rb"
@@ -284,12 +284,11 @@ class PGP:
             content = "\n".join(content_rows[1:-1])
         return content, verified
 
-
     def generate_key_pair(self, name, email, password, length):
         key_pair = RSA.generate(length)
 
         timestamp = int(time.time())
-        key_id = key_pair.n & 0xFFFFFFFFFFFFFFFF
+        key_id = hex(key_pair.n & 0xFFFFFFFFFFFFFFFF)
         rsa_public_key = key_pair.publickey().exportKey()
 
         rsa_private_key_bytes = key_pair.export_key()
@@ -299,13 +298,15 @@ class PGP:
         cast_cipher = CAST.new(cast_key, CAST.MODE_ECB)
         enc_private_key = cast_cipher.encrypt(pad(rsa_private_key_bytes, CAST.block_size))
 
+        # TODO Stavi KeyID na HEX -> DONE
         private_key_row = {
             "Timestamp": timestamp,
             "KeyID": key_id,
             "PublicKey": rsa_public_key,
             "EncPrivateKey": enc_private_key,
             "UserEmail": email,
-            "Username": name
+            "Username": name,
+            "Length": length
         }
 
         public_key_row = {
@@ -314,7 +315,8 @@ class PGP:
             "PublicKey": rsa_public_key,
             "UserID": email,
             "UserEmail": email,
-            "Username": name
+            "Username": name,
+            "Length": length
         }
 
         self.private_key_ring.append(private_key_row)
@@ -322,7 +324,50 @@ class PGP:
 
         return private_key_row, public_key_row
 
+    # Export and import of keys
+    def export_public_key_PEM(self, key_id, filename):
+        key_row = None
+        for item in self.public_key_ring:
+            if item["KeyID"] == key_id:
+                key_row = item
+                break
 
+        if key_row is None:
+            raise Exception("Public key does not exist")
+
+        rsa_public_key = RSA.importKey(key_row["PublicKey"])
+
+        with open(filename, "wb") as f:
+            f.write(rsa_public_key.exportKey("PEM"))
+
+    def export_private_key_PEM(self, key_id, password, filename):
+        key_row = None
+        for item in self.private_key_ring:
+            if item["KeyID"] == key_id:
+                key_row = item
+                break
+
+        if key_row is None:
+            raise Exception("Private key does not exist")
+
+        password_digest = hashlib.sha1(password.encode("utf-8")).digest()
+        cast_key = password_digest[0:16]
+
+        cast_cipher = CAST.new(cast_key, CAST.MODE_ECB)
+        dec_private_key = unpad(cast_cipher.decrypt(key_row["EncPrivateKey"]), CAST.block_size)
+
+        rsa_private_key = RSA.importKey(dec_private_key)
+
+        with open(filename, "wb") as f:
+            f.write(rsa_private_key.exportKey("PEM"))
+
+    def import_public_key_PEM(self, key_filename_PEM):
+        pass
+
+    def import_private_key_PEM(self, key_filename_PEM, password):
+        pass
+
+    # Key loading and saving from file
     def load_key_rings(self, filename=".key_storage.json"):
         try:
             with open(filename, "r") as f:
@@ -345,7 +390,8 @@ class PGP:
                 "UserEmail": item["UserEmail"],
                 "Username": item["Username"],
                 "PublicKey": base64.b64decode(item["PublicKey"]),
-                "EncPrivateKey": base64.b64decode(item["EncPrivateKey"])
+                "EncPrivateKey": base64.b64decode(item["EncPrivateKey"]),
+                "Length": item["Length"]
             })
 
         for item in data["public_key_ring"]:
@@ -354,7 +400,8 @@ class PGP:
                 "KeyID": item["KeyID"],
                 "UserEmail": item["UserEmail"],
                 "Username": item["Username"],
-                "PublicKey": base64.b64decode(item["PublicKey"])
+                "PublicKey": base64.b64decode(item["PublicKey"]),
+                "Length": item["Length"]
             })
 
     def save_key_rings(self, filename=".key_storage.json"):
@@ -369,11 +416,9 @@ class PGP:
                 "KeyID": item["KeyID"],
                 "UserEmail": item["UserEmail"],
                 "Username": item["Username"],
-                "PublicKey": base64.b64encode(
-                    item["PublicKey"] if isinstance(item["PublicKey"], bytes)
-                    else str(item["PublicKey"]).encode()
-                ).decode(),
-                "EncPrivateKey": base64.b64encode(item["EncPrivateKey"]).decode()
+                "PublicKey": base64.b64encode(item["PublicKey"]).decode("ascii"),
+                "EncPrivateKey": base64.b64encode(item["EncPrivateKey"]).decode("ascii"),
+                "Length": item["Length"]
             })
 
         for item in self.public_key_ring:
@@ -382,10 +427,8 @@ class PGP:
                 "KeyID": item["KeyID"],
                 "UserEmail": item["UserEmail"],
                 "Username": item["Username"],
-                "PublicKey": base64.b64encode(
-                    item["PublicKey"] if isinstance(item["PublicKey"], bytes)
-                    else str(item["PublicKey"]).encode()
-                ).decode()
+                "PublicKey": base64.b64encode(item["PublicKey"]).decode("ascii"),
+                "Length": item["Length"]
             })
 
         with open(filename, "w") as f:
@@ -394,18 +437,8 @@ class PGP:
 
 
 if __name__ == "__main__":
-    pass
     # pgp = PGP()
-    #
-    # private_row, public_row = pgp.generate_key_pair(email="dule@gmail.com", password="Lozinkica", length=1024)
-    # pgp.send_message("ima žaba",
-    #                  {
-    #                      "sign": False,
-    #                      "sign_key": private_row["KeyID"],
-    #                      "sign_key_password": "Lozinkica",
-    #                      "encrypt": True,
-    #                      "enc_public_key": private_row["KeyID"],
-    #                      "enc_algorithm": "AES128",
-    #                      "zip": False,
-    #                      "radix64": True}, "test.pgp")
+    # pgp.export_public_key_PEM(2047129769686152487, "public_key.pem")
+    # pgp.export_private_key_PEM(2047129769686152487, "Lozinka", "private_key.pem")
+    pass
 

@@ -55,8 +55,11 @@ class App:
             ttk.Button(popup, text="OK", command=popup.destroy).pack()
             return
 
+        # TODO Da se ne promptuje uvek -> Slobodno ubaci u PGP referencu (tipa u recieve_message) da moze da baci prompt_password
         password = self.prompt_password()
 
+
+        # TODO Mora malo lepsi mehanizam za prikazivanje verodostojnosti poruke - mali panel u tri boje sa porukicom
         decrypted_message, verified = self.pgp.receive_message(self.file, password)
 
         if verified:
@@ -217,6 +220,7 @@ class App:
     def send_message(self):
         content = self.send_text_area.get("1.0", "end").strip()
 
+        # TODO Dodaj neke error poruke
         if self.send_encrypt_bool.get() and not self.encrypt_public_key_options.get():
             return # No key selected
 
@@ -236,21 +240,21 @@ class App:
 
         options = {
             "sign": self.send_sign_bool.get(),
-            "sign_key": int(self.sign_private_key_options.get()) if self.send_sign_bool.get() else None,
+            "sign_key": self.sign_private_key_options.get() if self.send_sign_bool.get() else None,
             "sign_key_password": password,
             "zip": self.send_zip_bool.get(),
             "encrypt": self.send_encrypt_bool.get(),
-            "enc_public_key": int(self.encrypt_public_key_options.get()) if self.send_encrypt_bool.get() else None,
+            "enc_public_key": self.encrypt_public_key_options.get() if self.send_encrypt_bool.get() else None,
             "enc_algorithm": self.send_enc_algorithm.get() if self.send_encrypt_bool.get() else None,
             "radix64": self.send_radix64_bool.get(),
         }
 
         self.pgp.send_message(content, options, filename)
 
-    def prompt_password(self):
+    def prompt_password(self, prompt_text="Unesite lozinku za privatni ključ:"):
         password = simpledialog.askstring(
             "Lozinka",
-            "Unesite lozinku za privatni ključ:",
+            prompt_text,
             parent=self.root,
             show="*"
         )
@@ -321,7 +325,6 @@ class App:
 
         for row in self.pgp.public_key_ring:
             table.insert("", tk.END, values=(row["Username"], row["UserEmail"], row["KeyID"]))
-
 
     def configure_public_ring_tab(self):
 
@@ -425,8 +428,6 @@ class App:
 
         # Bottom panel contents
 
-
-
     def generate_key(self):
         if not self.name_entry.get() or not self.email_entry.get():
             return
@@ -443,7 +444,6 @@ class App:
         self.pgp.generate_key_pair(name, email, password, length)
 
         self.update_key_options()
-
 
     def start(self):
         self.root.mainloop()
