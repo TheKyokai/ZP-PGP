@@ -230,8 +230,7 @@ class PGP:
         print(f"digest: {digest}")
         return dec_signature == digest
 
-    def receive_message(self, filename, password):
-        options = {}
+    def receive_message(self, filename, app):
 
         with open(filename, 'rb') as in_file:
             # reading first line for encoding
@@ -261,12 +260,15 @@ class PGP:
 
         #Decryption
         if options["encrypted"]:
+            password = app.prompt_password()
             content = self.decrypt_message(content, options, password)
 
         #unzipping
         if options['zipped']:
             content = zlib.decompress(content)
+            print(f"content after unzip: {content}")
         content = content.decode("utf-8")
+        print(f"content: {content}\n")
 
         #signing
         content_rows = content.split("\n")
@@ -275,14 +277,17 @@ class PGP:
         if options['signed']:
             key_id = content_rows[1].split(":")[1]
             signature = content_rows[2].split(":")[1]
-            content = "\n".join(content_rows[5:-1])
+            timestamp = content_rows[4].split(":")[1]
+            content = "\n".join(content_rows[6:-1])
             print(key_id)
             print(signature)
             print(content)
             verified = self.verify_signature(key_id, signature, content)
         else:
-            content = "\n".join(content_rows[1:-1])
-        return content, verified
+            # now reading the timestamp
+            timestamp = content.split("\n")[0].split(":")[1]
+            content = "\n".join(content_rows[2:-1])
+        return content, verified, timestamp
 
     def generate_key_pair(self, name, email, password, length):
         key_pair = RSA.generate(length)

@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, simpledialog
 
+from Crypto.PublicKey import RSA
+
 from PGP import PGP
 
 
@@ -42,8 +44,29 @@ class App:
         else:
             self.file = None
 
-    def save(self):
-        pass
+    def choose_save_destination(self):
+        filename = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="Izaberite destinaciju za slanje",
+            defaultextension=".pgp",
+            filetypes=[
+                ("MSG files", "*.msg"),
+                ("All files", "*.*")
+            ]
+        )
+        if not filename:
+            return None
+
+        return filename
+
+    def save_original_message(self):
+        filename = self.choose_save_destination()
+        if filename is None:
+            return
+        with open(filename, "w") as file:
+            print("CONTENT" , self.content)
+            file.write(self.content)
+        return
 
     def decrypt(self):
 
@@ -55,36 +78,36 @@ class App:
             ttk.Button(popup, text="OK", command=popup.destroy).pack()
             return
 
-        # TODO Da se ne promptuje uvek -> Slobodno ubaci u PGP referencu (tipa u recieve_message) da moze da baci prompt_password
-        password = self.prompt_password()
-
-
         # TODO Mora malo lepsi mehanizam za prikazivanje verodostojnosti poruke - mali panel u tri boje sa porukicom
-        decrypted_message, verified = self.pgp.receive_message(self.file, password)
+        decrypted_message, verified, timestamp = self.pgp.receive_message(self.file, self)
+        self.content = decrypted_message
+        print("timestamp  ", timestamp)
 
         if verified:
             bg_color = "#C3FCBB"
         else:
             bg_color = "#FA918F"
 
+        self.timestamp = tk.Text(self.receive_tab, width=60, height=1)
+        self.timestamp.grid(row=4, column=4)
+        self.timestamp.insert(tk.INSERT, timestamp)
+        self.timestamp.config(state="disabled")
+
         self.message_text.config(state="normal")
         self.message_text = tk.Text(self.receive_tab, width=100, height=5, bg=bg_color)
-        self.message_text.grid(row=4, column=1)
+        self.message_text.grid(row=4, column=0, sticky="ew", columnspan = 3)
         self.message_text.insert(tk.INSERT, decrypted_message)
         self.message_text.config(state="disabled")
 
-
         if verified:
-            #TODO ovde ne ide choose file nego da samo nadje destinaciju i ime za postojeci fajl
             save_button = ttk.Button(
                 self.receive_tab,
-                text="Izaberi destinaciju",
-                command=self.choose_file,
-                width=20)
+                text="Sacuvaj originalnu poruku",
+                command=self.save_original_message,
+                width=30)
             save_button.grid(row=10, column=0, pady=10)
             self.file_destination_label = ttk.Label(self.receive_tab, text="Nijedan fajl nije izabran")
             self.file_destination_label.grid(row=10, column=1)
-            ttk.Button(self.receive_tab, text="Sacuvaj", command=self.save, width=20).grid(row=11, column=0, pady=10)
 
     def configure_receive_tab(self):
         #RECIEVE TAB
@@ -292,39 +315,69 @@ class App:
         else:
             self.sign_private_key_options.configure(state="disabled")
 
+    #TODO implementiraj
+    def delete_private_key(self, values):
+        pass
+
+    #TODO implementiraj
+    def  show_private_key(self, values):
+        pass
+
     def show_private_keys(self):
         table = ttk.Treeview(
             self.private_key_bottom_panel,
-            columns=("name", "email", "keyid"),
+            columns=("name", "email", "keyid", "enc", "delete", "show"),
             show="headings"
         )
 
         table.heading("name", text="Ime")
         table.heading("email", text="Email")
         table.heading("keyid", text="Key ID")
+        table.heading("enc", text="Sifrovan kljuc")
+        table.heading("delete", text="")
+        table.heading("show", text="")
 
         table.grid(row=0, column=0)
 
+
         for row in self.pgp.private_key_ring:
             if row["Username"] == self.name_entry.get() and row["UserEmail"] == self.email_entry.get():
-                table.insert("", tk.END, values = (row["Username"], row["UserEmail"], row["KeyID"]))
+                table.insert("", tk.END, values = (row["Username"], row["UserEmail"], row["KeyID"], row["EncPrivateKey"], "OBRISI", "PRIKAZI"
+                             #TODO dodaj dugmice za brisanje kljuca i prikazivanje dekriptovanog uz unosenje lozinke
+                             ))
+        def private_table_click_detected(event):
+            item = table.identify_row(event.y)
+            column = table.identify_column(event.x)
+
+            if column == "#5":
+                print("BRISANJE:", table.item(item)["values"])
+                self.delete_private_key(table.item(item)["values"])
+            elif column == "#6":
+                print("PRIKAZIVANJE:", table.item(item)["values"])
+                self.show_private_keys(table.item(item)["values"])
+
+        table.bind("<Button-1>", private_table_click_detected)
 
     def show_public_keys(self, public_ring_container):
 
         table = ttk.Treeview(
             public_ring_container,
-            columns=("name", "email", "keyid"),
+            columns=("name", "email", "keyid", "length", "n", "e"),
             show="headings"
         )
 
         table.heading("name", text="Ime")
         table.heading("email", text="Email")
         table.heading("keyid", text="Key ID")
+        table.heading("length", text="Duzina kljuca")
+        table.heading("n", text="n")
+        table.heading("e", text="e")
 
         table.grid(row=1, column=0, sticky="nsew", columnspan=2)
 
         for row in self.pgp.public_key_ring:
-            table.insert("", tk.END, values=(row["Username"], row["UserEmail"], row["KeyID"]))
+            key= RSA.importKey(row["PublicKey"])
+            table.insert("", tk.END, values=(row["Username"], row["UserEmail"], row["KeyID"], row["Length"], key.n, key.e))
 
     def configure_public_ring_tab(self):
 
