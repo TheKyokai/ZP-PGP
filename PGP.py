@@ -60,7 +60,7 @@ class PGP:
             packet_info += "\nENCRYPTED:Yes\n"
             packet_info += f"KEY_ID:{options['enc_public_key']}\n"
             packet_info += f"ALG:{options['enc_algorithm']}\n"
-            packet_info += "MODE:CBC\n"
+            packet_info += "MODE:CFB\n"
             packet_info += f"ENCRYPTED_SESSION_KEY:{session_key}\n"
             packet_info += f"IV:{initial_value}\n"
         else:
@@ -106,12 +106,12 @@ class PGP:
         enc_message = None
         if options['enc_algorithm'] == "CAST5":
             initial_value = token_bytes(CAST.block_size)
-            cipher = CAST.new(session_key, CAST.MODE_CBC, initial_value)
-            enc_message = cipher.encrypt(pad(message_bytes, CAST.block_size))
+            cipher = CAST.new(session_key, CAST.MODE_CFB, initial_value)
+            enc_message = cipher.encrypt(message_bytes)
         elif options['enc_algorithm'] == "AES128":
             initial_value = token_bytes(AES.block_size)
-            cipher = AES.new(session_key, AES.MODE_CBC, initial_value)
-            enc_message = cipher.encrypt(pad(message_bytes, AES.block_size))
+            cipher = AES.new(session_key, AES.MODE_CFB, initial_value)
+            enc_message = cipher.encrypt(message_bytes)
         else:
             raise Exception("Unknown encryption algorithm")
 
@@ -150,7 +150,7 @@ class PGP:
                 break
 
         if public_row is None:
-            raise Exception("Public key does not exist")
+            raise Exception("Javni ključ ne postoji")
         return public_row
 
     def decypt_private_key(self, password, keyID):
@@ -161,22 +161,18 @@ class PGP:
                 break
 
         if private_row is None:
-            raise Exception("Private key does not exist")
-        print(f"private row: {private_row}")
+            raise Exception("Privatni ključ ne postoji")
+
         password_hash = hashlib.sha1(password.encode("utf-8")).digest()
         cast_key = password_hash[0:16]
         cast_cipher = CAST.new(cast_key, CAST.MODE_ECB)
         try:
             rsa_private_key = unpad(cast_cipher.decrypt(private_row["EncPrivateKey"]), CAST.block_size)
         except ValueError:
-            raise Exception("Incorrect password - noticed due to unpadding issue")
+            raise Exception("Pogrešna lozinka - primećeno na osnovu padding-a pri dekripciji")
 
         rsa_private_key = RSA.importKey(rsa_private_key)
-        print(f"d = {rsa_private_key.d}")
-        print(f"n = {rsa_private_key.n}")
-
         public_key = RSA.importKey(private_row["PublicKey"])
-        print(f"n = {public_key.n}")
         return rsa_private_key, private_row
 
     def decrypt_message(self, message, options, password):
@@ -192,13 +188,13 @@ class PGP:
 
         initial_value = ast.literal_eval(options["iv"])
         if options['alg'] == "CAST5":
-            cipher = CAST.new(session_key, CAST.MODE_CBC, initial_value)
-            dec_message = unpad(cipher.decrypt(message), CAST.block_size)
+            cipher = CAST.new(session_key, CAST.MODE_CFB, initial_value)
+            dec_message = cipher.decrypt(message)
         elif options['alg'] == "AES128":
-            cipher = AES.new(session_key, AES.MODE_CBC, initial_value)
-            dec_message = unpad(cipher.decrypt(message), AES.block_size)
+            cipher = AES.new(session_key, AES.MODE_CFB, initial_value)
+            dec_message = cipher.decrypt(message)
         else:
-            raise Exception("Unknown encryption algorithm")
+            raise Exception("Nepoznat enkripcioni algoritam")
 
         return dec_message
 
@@ -227,7 +223,7 @@ class PGP:
                 ending_line = b'--PACKET INFO END--\n'
                 decode_option = "ascii"
             else:
-                raise Exception("Invalid encoding")
+                raise Exception("Nepoznato kodiranje")
 
         #reading line by line for recreating encrypting options
         options, content = self.read_packet_info(filename, read_option, ending_line, decode_option)
@@ -238,7 +234,8 @@ class PGP:
 
         #Decryption
         if options["encrypted"]:
-            password = app.prompt_password()
+            key_row = self.find_public_row(options['key_id'])
+            password = app.prompt_password(f"Unesite lozinku za privatni ključ {key_row['Username']} --- {key_row['KeyID']}:")
             content = self.decrypt_message(content, options, password)
 
         #unzipping
@@ -249,6 +246,8 @@ class PGP:
         #signing
         content_rows = content.split("\n")
         verified = None
+        signer_username = None
+        signer_email = None
         #first have to parse for signing options
         if options['signed']:
             key_id = content_rows[1].split(":")[1]
@@ -256,11 +255,14 @@ class PGP:
             timestamp = content_rows[4].split(":")[1]
             content = "\n".join(content_rows[6:-1])
             verified = self.verify_signature(key_id, signature, content)
+            signer_info = self.find_public_row(key_id)
+            signer_username = signer_info["Username"]
+            signer_email = signer_info["UserEmail"]
         else:
             # now reading the timestamp
             timestamp = content.split("\n")[0].split(":")[1]
             content = "\n".join(content_rows[2:-1])
-        return content, verified, timestamp
+        return content, verified, timestamp, signer_username, signer_email
 
     def generate_key_pair(self, name, email, password, length):
         key_pair = RSA.generate(length)
@@ -446,13 +448,5 @@ class PGP:
 
 
 if __name__ == "__main__":
-    # pgp = PGP()
-    # for item in pgp.private_key_ring:
-    #     print(item)
-    # pgp.export_private_key_PEM(pgp.private_key_ring[0]["KeyID"], "PGP_Files/test_private_export.pem", "a")
-    # pgp.import_private_key_PEM("PGP_Files/test_private_export.pem", "test", "test@gmail.com", "abc")
-    # print('\n')
-    # print(pgp.private_key_ring[0])
-    # print(pgp.private_key_ring[len(pgp.private_key_ring) - 1])
     pass
 

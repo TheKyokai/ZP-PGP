@@ -89,32 +89,41 @@ class App:
             self.report_error("Nije odabran fajl")
             return
 
-        # TODO Mora malo lepsi mehanizam za prikazivanje verodostojnosti poruke - mali panel u tri boje sa porukicom
-        decrypted_message, verified, timestamp = self.pgp.receive_message(self.file, self)
-        self.content = decrypted_message
-        date = datetime.fromtimestamp(int(timestamp))
-        formatted = date.strftime("%d.%m.%Y. %H:%M:%S")
+        try:
+            decrypted_message, verified, timestamp, signer_username, signer_email = self.pgp.receive_message(self.file, self)
+            self.content = decrypted_message
+            date = datetime.fromtimestamp(int(timestamp))
+            formatted = date.strftime("%d.%m.%Y. %H:%M:%S")
 
-        if verified is None:
-            bg_color = "#ffffff"
-        elif verified:
-            bg_color = "#C3FCBB"
-        else:
-            bg_color = "#FA918F"
+            if verified is None:
+                bg_color = "#ffffff"
+                verification_message = f"Poruka nije potpisana"
+            elif verified:
+                bg_color = "#C3FCBB"
+                verification_message = f"Verifikovan potpis korisnika {signer_username} ({signer_email})"
+            else:
+                bg_color = "#FA918F"
+                verification_message = f"Nevažeći potpis korisnika {signer_username} ({signer_email})"
 
-        self.content = formatted + "\n" + self.content
+            self.content = formatted + "\n" + self.content
 
-        self.message_text.config(state="normal")
-        self.message_text.delete("1.0", tk.END)
-        self.message_text.insert(tk.INSERT, self.content)
-        self.message_text.config(state="disabled")
+            self.message_text.config(state="normal")
+            self.message_text.delete("1.0", tk.END)
+            self.message_text.insert(tk.INSERT, self.content)
+            self.message_text.config(state="disabled")
 
-        #TODO dodaj potvrdu da li je verifikovano i informacije o onome ko je verifikovao
-        if self.verified_check is None:
-            self.verified_check = tk.Text(self.decrypt_option_panel, state="disabled", bg=bg_color, height = 1, width = 10)
-        else:
-            self.verified_check.config(bg=bg_color)
-        self.verified_check.pack(fill="both")
+            if self.verified_check is None:
+                self.verified_check = tk.Text(self.decrypt_option_panel, state="disabled", bg=bg_color, height = 1, width = 10)
+            else:
+                self.verified_check.config(bg=bg_color)
+            self.verified_check.config(state="normal")
+            self.verified_check.delete("1.0", tk.END)
+            self.verified_check.insert("1.0", verification_message)
+            self.verified_check.config(state="disabled")
+
+            self.verified_check.pack(fill="both")
+        except Exception as e:
+            self.report_error(e)
 
 
         self.save_button = ttk.Button(
@@ -361,7 +370,7 @@ class App:
 
         return filename
 
-    def update_encrypt_key(self):
+    def update_encrypt_key(self, dummy1, dummy2, dummy3):
         if self.send_encrypt_bool.get():
             state = "normal"
         else:
@@ -372,7 +381,7 @@ class App:
         self.send_aes_radio.configure(state=state)
         self.send_3des_radio.configure(state=state)
 
-    def update_sign_key(self):
+    def update_sign_key(self, dummy1, dummy2, dummy3):
         if self.send_sign_bool.get():
             self.sign_private_key_options.configure(state="readonly")
         else:
@@ -442,7 +451,7 @@ class App:
         ttk.Button(
             popup, padding=10, text="NE", command=delete_canceled).pack(side = tk.RIGHT)
 
-    def  show_private_key(self, values):
+    def show_private_key(self, values):
         try:
             password = self.prompt_password()
             popup = tk.Toplevel(self.root)
@@ -468,7 +477,6 @@ class App:
             else:
                 print(str(e))
         return
-
 
     def show_private_keys(self):
         table = ttk.Treeview(
