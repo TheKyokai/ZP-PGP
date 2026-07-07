@@ -118,7 +118,6 @@ class PGP:
 
         return enc_message, enc_session_key.to_bytes((enc_session_key.bit_length() + 7) // 8), initial_value
 
-    # TODO Dodaj prikazivanje timestampa i dobro parisanje poruke
     def read_packet_info(self, filename, read_options, ending_line, decode_option):
         options = {}
         with open(filename, read_options) as in_file:
@@ -249,7 +248,7 @@ class PGP:
 
         #signing
         content_rows = content.split("\n")
-        verified = True
+        verified = None
         #first have to parse for signing options
         if options['signed']:
             key_id = content_rows[1].split(":")[1]

@@ -1,5 +1,5 @@
-import hashlib
 import tkinter as tk
+from datetime import datetime
 from tkinter import ttk, filedialog, simpledialog, messagebox
 
 from Crypto.PublicKey import RSA
@@ -42,6 +42,11 @@ class App:
         self.public_key_import_dialog_result = None
         self.key_pair_import_dialog_result = None
 
+        self.file = None
+        self.content = None
+        self.verified_check = None
+        self.save_button = None
+
     def choose_file(self):
         filename = filedialog.askopenfilename(title="Izaberi fajl")
 
@@ -69,77 +74,96 @@ class App:
     def save_original_message(self):
         filename = self.choose_save_destination()
         if filename is None:
-            return
+            self.report_error("Nije odabran fajl za cuvanje poruke")
         with open(filename, "w") as file:
             print("CONTENT" , self.content)
             file.write(self.content)
+            self.report_success("Poruka je uspesno sacuvana")
         return
 
     def decrypt(self):
+        if self.save_button is not None:
+            self.save_button.destroy()
 
         if self.file is None:
-            popup = tk.Toplevel(self.root)
-            popup.title("GRESKA")
-            popup.geometry("300x200")
-            ttk.Label(popup, text="Mora se odabrati fajl za citanje!").pack(pady=50)
-            ttk.Button(popup, text="OK", command=popup.destroy).pack()
+            self.report_error("Nije odabran fajl")
             return
 
         # TODO Mora malo lepsi mehanizam za prikazivanje verodostojnosti poruke - mali panel u tri boje sa porukicom
         decrypted_message, verified, timestamp = self.pgp.receive_message(self.file, self)
         self.content = decrypted_message
-        print("timestamp  ", timestamp)
+        date = datetime.fromtimestamp(int(timestamp))
+        formatted = date.strftime("%d.%m.%Y. %H:%M:%S")
 
-        if verified:
+        if verified is None:
+            bg_color = "#ffffff"
+        elif verified:
             bg_color = "#C3FCBB"
         else:
             bg_color = "#FA918F"
 
-        self.timestamp = tk.Text(self.receive_tab, width=60, height=1)
-        self.timestamp.grid(row=4, column=4)
-        self.timestamp.insert(tk.INSERT, timestamp)
-        self.timestamp.config(state="disabled")
+        self.content = formatted + "\n" + self.content
 
         self.message_text.config(state="normal")
-        self.message_text = tk.Text(self.receive_tab, width=100, height=5, bg=bg_color)
-        self.message_text.grid(row=4, column=0, sticky="ew", columnspan = 3)
-        self.message_text.insert(tk.INSERT, decrypted_message)
+        self.message_text.delete("1.0", tk.END)
+        self.message_text.insert(tk.INSERT, self.content)
         self.message_text.config(state="disabled")
 
-        if verified:
-            save_button = ttk.Button(
-                self.receive_tab,
-                text="Sacuvaj originalnu poruku",
-                command=self.save_original_message,
-                width=30)
-            save_button.grid(row=10, column=0, pady=10)
-            self.file_destination_label = ttk.Label(self.receive_tab, text="Nijedan fajl nije izabran")
-            self.file_destination_label.grid(row=10, column=1)
+        #TODO dodaj potvrdu da li je verifikovano i informacije o onome ko je verifikovao
+        if self.verified_check is None:
+            self.verified_check = tk.Text(self.decrypt_option_panel, state="disabled", bg=bg_color, height = 1, width = 10)
+        else:
+            self.verified_check.config(bg=bg_color)
+        self.verified_check.pack(fill="both")
+
+
+        self.save_button = ttk.Button(
+            self.decrypt_option_panel,
+            text="Sacuvaj originalnu poruku",
+            command=self.save_original_message,
+            width=30)
+        self.save_button.pack(anchor = "center", pady = 5)
 
     def configure_receive_tab(self):
         #RECIEVE TAB
 
-        self.file = None
-        self.file_destination_label = None
+        receive_container = ttk.Frame(self.receive_tab)
+        receive_container.pack(fill="both", expand=True)
+
+        # Configure 1:2 split
+        receive_container.columnconfigure(0, weight=1)
+        receive_container.columnconfigure(1, weight=1)
+        receive_container.rowconfigure(0, weight=1)
+        receive_container.rowconfigure(1, weight=0)
+
+        # Control panel
+        self.decrypt_option_panel = ttk.Frame(receive_container)
+        self.decrypt_option_panel.grid(row=0, column=0, sticky="nsew")
+
+        # Message area
+        self.message_panel = ttk.Frame(receive_container)
+        self.message_panel.grid(row=0, column=1, sticky="nsew")
 
         receive_button = ttk.Button(
-            self.receive_tab,
+            self.decrypt_option_panel,
             text="Izaberi fajl",
             command=self.choose_file,
-            width=20)
-        receive_button.grid(row=1, column=0, pady=10)
+            width=20
+            )
+        receive_button.pack(anchor = "center", pady = 5)
 
-        self.file_label = ttk.Label(self.receive_tab, text="Nijedan fajl nije izabran")
-        self.file_label.grid(row=1, column=1)
+        self.file_label = ttk.Label(self.decrypt_option_panel, text="Nijedan fajl nije izabran",
+                                    width=60, anchor="center")
+        self.file_label.pack(anchor = "center")
 
-        read_button = ttk.Button(self.receive_tab,
+        read_button = ttk.Button(self.decrypt_option_panel,
                    text="Procitaj",
                    command = self.decrypt,
                    width=20)
-        read_button.grid(row=2, column=0, pady=10)
+        read_button.pack(anchor = "center", pady = 5)
 
-        self.message_text = tk.Text(self.receive_tab, width=100, height=5)
-        self.message_text.grid(row=4, column=0, sticky="ew", columnspan = 3)
+        self.message_text = tk.Text(self.message_panel, wrap = "word")
+        self.message_text.pack(fill="both", expand=True)
         self.message_text.insert(tk.INSERT, "")
         self.message_text.config(state="disabled")
 
@@ -251,7 +275,6 @@ class App:
         content = self.send_text_area.get("1.0", "end").strip()
 
         try:
-            # TODO Dodaj neke error poruke
             if self.send_encrypt_bool.get() and not self.encrypt_public_key_options.get():
                 raise Exception("Nije izabran ključ za enkripciju")
 
@@ -338,7 +361,7 @@ class App:
 
         return filename
 
-    def update_encrypt_key(self, *args):
+    def update_encrypt_key(self):
         if self.send_encrypt_bool.get():
             state = "normal"
         else:
@@ -349,38 +372,38 @@ class App:
         self.send_aes_radio.configure(state=state)
         self.send_3des_radio.configure(state=state)
 
-    def update_sign_key(self, *args):
+    def update_sign_key(self):
         if self.send_sign_bool.get():
             self.sign_private_key_options.configure(state="readonly")
         else:
             self.sign_private_key_options.configure(state="disabled")
 
-    def delete_key(self):
+    def delete_public_key(self):
 
-        if self.selected_key_pair is not None:
-            password = self.prompt_password()
-            private_key, row = self.pgp.decypt_private_key(password, self.selected_key_pair)
-            self.pgp.private_key_ring.remove(row)
-            self.show_private_keys()
-            self.selected_key_pair = None
-        else:
-            row = self.pgp.find_public_row(self.selected_public_key)
-            self.pgp.public_key_ring.remove(row)
-            self.show_public_keys(self.public_ring_container)
-            self.selected_public_key = None
-        print(row)
+        row = self.pgp.find_public_row(self.selected_public_key)
+        self.pgp.public_key_ring.remove(row)
+        self.show_public_keys(self.public_ring_container)
+        self.selected_public_key = None
+        self.report_success("Uspesno je izbrisan javni kljuc")
 
-    def delete_key_popup(self):
+    def delete_private_key(self):
+        password = self.prompt_password()
+        private_key, row = self.pgp.decypt_private_key(password, self.selected_key_pair)
+        self.pgp.private_key_ring.remove(row)
+        self.show_private_keys()
+        self.selected_key_pair = None
+        self.report_success("Uspesno je izbrisan privatni kljuc")
+
+    def delete_public_key_popup(self):
         popup = tk.Toplevel(self.root)
         popup.geometry("400x300")
 
         if self.selected_key_pair is None and self.selected_public_key is None:
-            popup.title("GRESKA")
-            ttk.Label(popup, text = "Nije odabran nijedan kljuc")
+            self.report_error("Nije odabran nijedan kljuc")
             return
 
-        def delete_confitmed():
-            self.delete_key()
+        def delete_confirmed():
+            self.delete_public_key()
             popup.destroy()
 
         def delete_canceled():
@@ -391,7 +414,31 @@ class App:
         ttk.Label(popup, text=self.selected_key_pair).pack()
         ttk.Label(popup, text="Da li ste sigurni da zelite da izbrisete kljuc?").pack()
         ttk.Button(
-            popup, padding = 10, text = "DA", command = delete_confitmed).pack(side = tk.LEFT)
+            popup, padding = 10, text = "DA", command = delete_confirmed).pack(side = tk.LEFT)
+        ttk.Button(
+            popup, padding=10, text="NE", command=delete_canceled).pack(side = tk.RIGHT)
+
+    def delete_private_key_popup(self):
+        popup = tk.Toplevel(self.root)
+        popup.geometry("400x300")
+
+        if self.selected_key_pair is None and self.selected_public_key is None:
+            self.report_error("Nije odabran nijedan kljuc")
+            return
+
+        def delete_confirmed():
+            self.delete_private_key()
+            popup.destroy()
+
+        def delete_canceled():
+            self.selected_key_pair = None
+            popup.destroy()
+
+        popup.title("Brisanje kljuca")
+        ttk.Label(popup, text=self.selected_key_pair).pack()
+        ttk.Label(popup, text="Da li ste sigurni da zelite da izbrisete kljuc?").pack()
+        ttk.Button(
+            popup, padding = 10, text = "DA", command = delete_confirmed).pack(side = tk.LEFT)
         ttk.Button(
             popup, padding=10, text="NE", command=delete_canceled).pack(side = tk.RIGHT)
 
@@ -399,7 +446,6 @@ class App:
         try:
             password = self.prompt_password()
             popup = tk.Toplevel(self.root)
-            # try:
             private_key, row = self.pgp.decypt_private_key(password, values[2])
             print(private_key)
             print(private_key.d)
@@ -418,9 +464,7 @@ class App:
 
         except Exception as e:
             if str(e) == "Incorrect password - noticed due to unpadding issue":
-                popup.title("GRESKA")
-                popup.geometry("300x100")
-                ttk.Label(popup, text="Pogresna lozinka za dekriptovanje kljuca").grid(column=0, row=1)
+                self.report_error("Pogresna lozinka za dekriptovanje kljuca")
             else:
                 print(str(e))
         return
@@ -443,8 +487,7 @@ class App:
         self.selected_key_pair = None
 
         for row in self.pgp.private_key_ring:
-            if row["Username"] == self.name_entry.get() and row["UserEmail"] == self.email_entry.get():
-                table.insert("", tk.END, values = (row["Username"], row["UserEmail"], row["KeyID"], "PRIKAZI"))
+            table.insert("", tk.END, values = (row["Username"], row["UserEmail"], row["KeyID"], "PRIKAZI"))
         def private_table_click_detected(event):
             item = table.identify_row(event.y)
             column = table.identify_column(event.x)
@@ -529,7 +572,7 @@ class App:
             public_ring_container,
             padding=10,
             text="Izbrisite kljuc",
-            command=self.delete_key_popup
+            command=self.delete_public_key_popup
         )
         delete_key_button.grid(row=0, column=2)
 
@@ -619,17 +662,11 @@ class App:
         delete_key_pair_button = ttk.Button(
             top_right_panel,
             text="Izbrisite odabrani kljuc",
-            command=self.delete_key_popup
+            command=self.delete_private_key_popup
         )
         delete_key_pair_button.grid(row=4, column=1, sticky="e")
 
-        #Show private ring button
-        show_button = ttk.Button(
-            top_left_panel,
-            text = "Prikaz mojih ključeva",
-            command = self.show_private_keys
-        )
-        show_button.grid(column=0, row=5, padx=5)
+        self.show_private_keys()
 
         # Bottom panel contents
 
@@ -793,6 +830,7 @@ class App:
 
             self.pgp.export_public_key_PEM(self.selected_public_key, filename)
             self.report_success("Javni ključ je uspešno izvezen")
+            self.selected_public_key = None
         except Exception as e:
             self.report_error(e)
 
@@ -811,6 +849,7 @@ class App:
 
             self.pgp.export_private_key_PEM(self.selected_key_pair, filename, password)
             self.report_success("Par ključeva je uspešno izvezen")
+            self.selected_key_pair = None
         except Exception as e:
             self.report_error(e)
 
