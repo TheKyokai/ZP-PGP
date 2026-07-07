@@ -234,7 +234,6 @@ class PGP:
         with open(filename, 'rb') as in_file:
             # reading first line for encoding
             line = in_file.readline()
-            # TODO Pogledaj ovo morao sam da menjam malo da bi mi radilo jer nije htelo za bin file
             if line == b'PGP-R64\r\n' or line == b'PGP-R64\n':
                  print("RADIX")
                  radix64 = True
@@ -365,13 +364,16 @@ class PGP:
             f.write(rsa_private_key.exportKey("PEM"))
 
     def import_public_key_PEM(self, key_filename_PEM, username, email):
+        if not key_filename_PEM or not username or not email:
+            raise Exception("Nedovoljno podataka za uvoz")
+
         try:
             with open(key_filename_PEM, "rb") as f:
                 rsa_key = RSA.import_key(f.read())
         except FileNotFoundError:
-            raise Exception("File does not exist")
+            raise Exception("Fajl ne postoji")
         except ValueError or TypeError or IndexError:
-            raise Exception("Invalid file format")
+            raise Exception("Neispravan format fajla")
 
 
         rsa_key.size_in_bits()
@@ -389,13 +391,19 @@ class PGP:
         self.public_key_ring.append(imported_key)
 
     def import_private_key_PEM(self, key_filename_PEM, username, email, password):
+        if not key_filename_PEM or not username or not email or not password:
+            raise Exception("Nedovoljno podataka za uvoz")
+
         try:
             with open(key_filename_PEM, "rb") as f:
                 rsa_key = RSA.import_key(f.read())
         except FileNotFoundError:
-            raise Exception("File does not exist")
+            raise Exception("Fajl ne postoji")
         except ValueError or TypeError or IndexError:
-            raise Exception("Invalid file format")
+            raise Exception("Neispravan format fajla")
+
+        if not rsa_key.has_private():
+            raise Exception("Fajl sadrži samo javni deo ključa")
 
         rsa_key.size_in_bits()
         key_id = hex(rsa_key.n & 0xFFFFFFFFFFFFFFFF)

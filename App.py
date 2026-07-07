@@ -38,6 +38,9 @@ class App:
         self.selected_key_pair = None
         self.selected_public_key = None
 
+        self.public_key_import_dialog_result = None
+        self.key_pair_import_dialog_result = None
+
     def choose_file(self):
         filename = filedialog.askopenfilename(title="Izaberi fajl")
 
@@ -389,6 +392,9 @@ class App:
             item = table.identify_row(event.y)
             column = table.identify_column(event.x)
 
+            if not item:
+                return
+
             # TODO Update je ovde
             self.selected_key_pair = table.item(item)["values"][2]
 
@@ -426,6 +432,10 @@ class App:
 
         def public_table_click_detected(event):
             item = table.identify_row(event.y)
+
+            if not item:
+                return
+
             self.selected_public_key = table.item(item)["values"][2]
             print(self.selected_public_key)
 
@@ -565,19 +575,136 @@ class App:
 
         self.update_key_options()
 
-
+    # Helper functions
     def report_error(self, error_msg):
         messagebox.showerror("Greška", error_msg)
 
     def report_success(self, msg):
         messagebox.showinfo("Uspeh", msg)
 
-    #TODO
+    # Import helper functions
+    def choose_PEM_key(self):
+        filename = filedialog.askopenfilename(
+            parent=self.root,
+            title="Izaberite ključ za uvoz",
+            defaultextension=".pem",
+            filetypes=[
+                ("PEM files", "*.pem"),
+                ("All files", "*.*")
+            ]
+        )
+        if not filename:
+            return None
+
+        return filename
+
+    def public_key_dialog_window(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Uvoz javnog ključa")
+        dialog.resizable(False, False)
+
+        self.public_key_import_dialog_result = None
+
+        ttk.Label(dialog, text="Ime:").grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        username_entry = ttk.Entry(dialog)
+        username_entry.grid(row=0, column=1, padx=10, pady=5)
+
+        ttk.Label(dialog, text="Email:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        email_entry = ttk.Entry(dialog)
+        email_entry.grid(row=1, column=1, padx=10, pady=5)
+
+        def submit():
+            self.public_key_import_dialog_result = {
+                "username": username_entry.get(),
+                "email": email_entry.get()
+            }
+            dialog.destroy()
+
+        ttk.Button(dialog, text="Ok", command=submit).grid(
+            row=2, column=0, columnspan=2, pady=10
+        )
+
+        dialog.transient(self.root)
+        dialog.grab_set()
+        self.root.wait_window(dialog)
+
+        return self.public_key_import_dialog_result
+
+    def key_pair_dialog_window(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Uvoz para ključeva")
+        dialog.resizable(False, False)
+
+        self.key_pair_import_dialog_result = None
+
+        ttk.Label(dialog, text="Ime:").grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        username_entry = ttk.Entry(dialog)
+        username_entry.grid(row=0, column=1, padx=10, pady=5)
+
+        ttk.Label(dialog, text="Email:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        email_entry = ttk.Entry(dialog)
+        email_entry.grid(row=1, column=1, padx=10, pady=5)
+
+        ttk.Label(dialog, text="Password:").grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        password_entry = ttk.Entry(dialog)
+        password_entry.grid(row=2, column=1, padx=10, pady=5)
+
+        def submit():
+            self.key_pair_import_dialog_result = {
+                "username": username_entry.get(),
+                "email": email_entry.get(),
+                "password": password_entry.get()
+            }
+            dialog.destroy()
+
+        ttk.Button(dialog, text="Ok", command=submit).grid(
+            row=3, column=0, columnspan=2, pady=10
+        )
+
+        dialog.transient(self.root)
+        dialog.grab_set()
+        self.root.wait_window(dialog)
+
+        return self.key_pair_import_dialog_result
+
     def import_public_key(self):
-        print("Public import")
+        filename = self.choose_PEM_key()
+        if filename is None:
+            return
+
+        info = self.public_key_dialog_window()
+        if info is None:
+            return
+
+        username = info['username']
+        email = info['email']
+
+        self.selected_public_key = None
+        try:
+            self.pgp.import_public_key_PEM(filename, username, email)
+            self.report_success("Javni ključ je uspešno uvezen")
+        except Exception as e:
+            self.report_error(e)
 
     def import_key_pair(self):
-        print("Pair import")
+        filename = self.choose_PEM_key()
+        if filename is None:
+            return
+
+        info = self.key_pair_dialog_window()
+        if info is None:
+            return
+
+        username = info['username']
+        email = info['email']
+        password = info['password']
+
+        self.selected_public_key = None
+        try:
+            self.pgp.import_private_key_PEM(filename, username, email, password)
+            self.report_success("Par ključeva je uspešno uvezen")
+        except Exception as e:
+            self.report_error(e)
 
     def export_public_key(self):
         try:
@@ -616,7 +743,6 @@ class App:
         self.pgp.save_key_rings()
 
 
-# TODO Connect the back for key import (username, email for both - +password for pair)
 if __name__ == "__main__":
     app = App()
     app.start()
