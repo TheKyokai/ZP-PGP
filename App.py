@@ -1,3 +1,4 @@
+import hashlib
 import tkinter as tk
 from tkinter import ttk, filedialog, simpledialog, messagebox
 
@@ -354,16 +355,77 @@ class App:
         else:
             self.sign_private_key_options.configure(state="disabled")
 
-    #TODO implementiraj
-    def delete_private_key(self, values):
-        pass
+    def delete_key(self):
 
-    #TODO implementiraj
+        if self.selected_key_pair is not None:
+            password = self.prompt_password()
+            private_key, row = self.pgp.decypt_private_key(password, self.selected_key_pair)
+            self.pgp.private_key_ring.remove(row)
+            self.show_private_keys()
+            self.selected_key_pair = None
+        else:
+            row = self.pgp.find_public_row(self.selected_public_key)
+            self.pgp.public_key_ring.remove(row)
+            self.show_public_keys(self.public_ring_container)
+            self.selected_public_key = None
+        print(row)
+
+    def delete_key_popup(self):
+        popup = tk.Toplevel(self.root)
+        popup.geometry("400x300")
+
+        if self.selected_key_pair is None and self.selected_public_key is None:
+            popup.title("GRESKA")
+            ttk.Label(popup, text = "Nije odabran nijedan kljuc")
+            return
+
+        def delete_confitmed():
+            self.delete_key()
+            popup.destroy()
+
+        def delete_canceled():
+            self.selected_key_pair = None
+            popup.destroy()
+
+        popup.title("Brisanje kljuca")
+        ttk.Label(popup, text=self.selected_key_pair).pack()
+        ttk.Label(popup, text="Da li ste sigurni da zelite da izbrisete kljuc?").pack()
+        ttk.Button(
+            popup, padding = 10, text = "DA", command = delete_confitmed).pack(side = tk.LEFT)
+        ttk.Button(
+            popup, padding=10, text="NE", command=delete_canceled).pack(side = tk.RIGHT)
+
     def  show_private_key(self, values):
-        pass
+        try:
+            password = self.prompt_password()
+            popup = tk.Toplevel(self.root)
+            # try:
+            private_key, row = self.pgp.decypt_private_key(password, values[2])
+            print(private_key)
+            print(private_key.d)
+            print(private_key.n)
+            popup.title("Privatni kljuc")
+            popup.geometry("700x100")
+            ttk.Label(popup, text="ID kljuca: ").grid(column=0, row=1)
+            ttk.Label(popup, text = values[2]).grid(column=1, row=1, sticky = "w")
+            ttk.Label(popup, text = "d").grid(column=0, row=2)
+            d_text = tk.Text(popup, height=3, width = 2,  wrap = "char")
+            d_text.grid(column=1, row=2, sticky = "snew")
+            d_text.insert(tk.INSERT, hex(private_key.d))
+            d_text.config(state="disabled")
+            ttk.Label(popup, text = "n").grid(column=0, row=4)
+            ttk.Label(popup, text = hex(private_key.n)).grid(column=1, row=4, rowspan = 2)
+
+        except Exception as e:
+            if str(e) == "Incorrect password - noticed due to unpadding issue":
+                popup.title("GRESKA")
+                popup.geometry("300x100")
+                ttk.Label(popup, text="Pogresna lozinka za dekriptovanje kljuca").grid(column=0, row=1)
+            else:
+                print(str(e))
+        return
 
 
-    # TODO Cini mi se da fali update kljuceva u tabelama ako se generise nov ili izbrise
     def show_private_keys(self):
         table = ttk.Treeview(
             self.private_key_bottom_panel,
@@ -374,20 +436,15 @@ class App:
         table.heading("name", text="Ime")
         table.heading("email", text="Email")
         table.heading("keyid", text="Key ID")
-        table.heading("enc", text="Sifrovan kljuc")
-        table.heading("delete", text="")
         table.heading("show", text="")
 
         table.grid(row=0, column=0)
 
-        # TODO Ovo se menja da bi radio export kako treba, mozes da koristis i za brisanje
         self.selected_key_pair = None
 
         for row in self.pgp.private_key_ring:
             if row["Username"] == self.name_entry.get() and row["UserEmail"] == self.email_entry.get():
-                table.insert("", tk.END, values = (row["Username"], row["UserEmail"], row["KeyID"], row["EncPrivateKey"], "OBRISI", "PRIKAZI"
-                             #TODO dodaj dugmice za brisanje kljuca i prikazivanje dekriptovanog uz unosenje lozinke
-                             ))
+                table.insert("", tk.END, values = (row["Username"], row["UserEmail"], row["KeyID"], "PRIKAZI"))
         def private_table_click_detected(event):
             item = table.identify_row(event.y)
             column = table.identify_column(event.x)
@@ -398,12 +455,9 @@ class App:
             # TODO Update je ovde
             self.selected_key_pair = table.item(item)["values"][2]
 
-            if column == "#5":
-                print("BRISANJE:", table.item(item)["values"])
-                self.delete_private_key(table.item(item)["values"])
-            elif column == "#6":
+            if column == "#4":
                 print("PRIKAZIVANJE:", table.item(item)["values"])
-                self.show_private_keys(table.item(item)["values"])
+                self.show_private_key(table.item(item)["values"])
 
         table.bind("<Button-1>", private_table_click_detected)
 
@@ -422,13 +476,15 @@ class App:
         table.heading("n", text="n")
         table.heading("e", text="e")
 
-        table.grid(row=1, column=0, sticky="nsew", columnspan=2)
+        table.column("e", anchor = tk.CENTER)
+
+        table.grid(row=1, column=0, sticky="nsew", columnspan=3)
 
         self.selected_public_key = None
 
         for row in self.pgp.public_key_ring:
             key= RSA.importKey(row["PublicKey"])
-            table.insert("", tk.END, values=(row["Username"], row["UserEmail"], row["KeyID"], row["Length"], key.n, key.e))
+            table.insert("", tk.END, values=(row["Username"], row["UserEmail"], row["KeyID"], row["Length"], hex(key.n), hex(key.e)))
 
         def public_table_click_detected(event):
             item = table.identify_row(event.y)
@@ -443,13 +499,15 @@ class App:
 
     def configure_public_ring_tab(self):
 
-        public_ring_container = ttk.Frame(self.public_ring_tab)
+        self.public_ring_container = ttk.Frame(self.public_ring_tab)
+        public_ring_container = self.public_ring_container
         public_ring_container.pack(fill="both", expand=True)
 
         public_ring_container.rowconfigure(0, weight=1)
         public_ring_container.rowconfigure(1, weight=4)
         public_ring_container.columnconfigure(0, weight=1)
         public_ring_container.columnconfigure(1, weight=1)
+        public_ring_container.columnconfigure(2, weight=1)
 
         import_keys_button = ttk.Button(
             public_ring_container,
@@ -466,6 +524,14 @@ class App:
             command=self.export_public_key
         )
         export_keys_button.grid(row=0, column=1)
+
+        delete_key_button = ttk.Button(
+            public_ring_container,
+            padding=10,
+            text="Izbrisite kljuc",
+            command=self.delete_key_popup
+        )
+        delete_key_button.grid(row=0, column=2)
 
         self.show_public_keys(public_ring_container)
 
@@ -548,6 +614,15 @@ class App:
         )
         export_key_pair_button.grid(row=3, column=1, sticky="e")
 
+        #delete key pair button
+
+        delete_key_pair_button = ttk.Button(
+            top_right_panel,
+            text="Izbrisite odabrani kljuc",
+            command=self.delete_key_popup
+        )
+        delete_key_pair_button.grid(row=4, column=1, sticky="e")
+
         #Show private ring button
         show_button = ttk.Button(
             top_left_panel,
@@ -563,7 +638,6 @@ class App:
             return
 
         password = self.prompt_password()
-
         if password is None:
             return
 
@@ -574,6 +648,8 @@ class App:
         self.pgp.generate_key_pair(name, email, password, length)
 
         self.update_key_options()
+        self.show_private_keys()
+        self.selected_key_pair = None
 
     # Helper functions
     def report_error(self, error_msg):
@@ -743,6 +819,7 @@ class App:
         self.pgp.save_key_rings()
 
 
+# TODO Connect the back for key import (username, email for both - +password for pair)
 if __name__ == "__main__":
     app = App()
     app.start()

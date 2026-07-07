@@ -89,37 +89,13 @@ class PGP:
     def generate_signature(self, message, options):
         digest = hashlib.sha1(message.encode("utf-8")).digest()
 
-        pk_row = None
-        for row in self.private_key_ring:
-            if row["KeyID"] == options["sign_key"]:
-                pk_row = row
-                break
-        if pk_row is None:
-            raise Exception("Privatni ključ ne postoji")
-
-        password_hash = hashlib.sha1(options["sign_key_password"].encode("utf-8")).digest()
-        cast_key = password_hash[0:16]
-
-        cast_cipher = CAST.new(cast_key, CAST.MODE_ECB)
-        try:
-            rsa_private_key_bytes = unpad(cast_cipher.decrypt(pk_row["EncPrivateKey"]), CAST.block_size)
-        except ValueError:
-            raise Exception("Pogrešna lozinka - primećeno zbog neodgovarajučeg padding-a")
-
-        rsa_private_key = RSA.importKey(rsa_private_key_bytes)
+        rsa_private_key, row = self.decypt_private_key(options["sign_key_password"], options["sign_key"])
 
         signature = pow(int.from_bytes(digest), rsa_private_key.d, rsa_private_key.n)
         return {"signature": signature, "KeyID": options["sign_key"]}
 
     def encrypt_message(self, message_bytes, options):
-        public_row = None
-        for item in self.public_key_ring:
-            if item["KeyID"] == options["enc_public_key"]:
-                public_row = item
-                break
-
-        if public_row is None:
-            raise Exception("Public key does not exist")
+        public_row = self.find_public_row(options["enc_public_key"])
 
         session_key = token_bytes(16)
         rsa_public_key = RSA.importKey(public_row["PublicKey"])
@@ -167,18 +143,27 @@ class PGP:
 
         return options, content
 
-    def decrypt_message(self, message, options, password):
-        #finding the private key for decrypting
+    def find_public_row(self, keyID):
+        public_row = None
+        for item in self.public_key_ring:
+            if item["KeyID"] == keyID:
+                public_row = item
+                break
+
+        if public_row is None:
+            raise Exception("Public key does not exist")
+        return public_row
+
+    def decypt_private_key(self, password, keyID):
         private_row = None
         for item in self.private_key_ring:
-            if item["KeyID"] == options["key_id"]:
+            if item["KeyID"] == keyID:
                 private_row = item
                 break
 
         if private_row is None:
             raise Exception("Private key does not exist")
-
-        #the private key needs to be decrypted
+        print(f"private row: {private_row}")
         password_hash = hashlib.sha1(password.encode("utf-8")).digest()
         cast_key = password_hash[0:16]
         cast_cipher = CAST.new(cast_key, CAST.MODE_ECB)
@@ -188,16 +173,23 @@ class PGP:
             raise Exception("Incorrect password - noticed due to unpadding issue")
 
         rsa_private_key = RSA.importKey(rsa_private_key)
+        print(f"d = {rsa_private_key.d}")
+        print(f"n = {rsa_private_key.n}")
+
+        public_key = RSA.importKey(private_row["PublicKey"])
+        print(f"n = {public_key.n}")
+        return rsa_private_key, private_row
+
+    def decrypt_message(self, message, options, password):
+
+        #finding the private key for decrypting
+        rsa_private_key, row = self.decypt_private_key(password, options["key_id"])
 
         # now the session key can be decrypted
         enc_session_key = options["encrypted_session_key"]
         e_bytes = ast.literal_eval(enc_session_key)
-        print(f"type: {type(e_bytes)}")
-        print(f"{e_bytes}")
         enc_session_key = int.from_bytes(e_bytes)
-        print(f"enc_session_key: {enc_session_key}")
         session_key = pow(enc_session_key, rsa_private_key.d, rsa_private_key.n).to_bytes(length = 16)
-        print(f"session_key: {session_key}")
 
         initial_value = ast.literal_eval(options["iv"])
         if options['alg'] == "CAST5":
@@ -209,24 +201,15 @@ class PGP:
         else:
             raise Exception("Unknown encryption algorithm")
 
-        print(f"dec_message: {dec_message}")
         return dec_message
 
     def verify_signature(self, key_id, signature, content):
         #decrypt the signature and hash the content then compare
         digest = hashlib.sha1(content.encode("utf-8")).digest()
         digest = int.from_bytes(digest)
-        pk_row = None
-        for row in self.public_key_ring:
-            if row["KeyID"] == key_id:
-                pk_row = row
-                break
-        if pk_row is None:
-            raise Exception("Key does not exist")
+        pk_row = self.find_public_row(key_id)
         rsa_public_key = RSA.importKey(pk_row["PublicKey"])
         dec_signature = pow(int(signature), rsa_public_key.e, rsa_public_key.n)
-        print(f"dec_signature: {dec_signature}")
-        print(f"digest: {digest}")
         return dec_signature == digest
 
     def receive_message(self, filename, app):
@@ -235,13 +218,11 @@ class PGP:
             # reading first line for encoding
             line = in_file.readline()
             if line == b'PGP-R64\r\n' or line == b'PGP-R64\n':
-                 print("RADIX")
                  radix64 = True
                  read_option = "r"
                  ending_line = '--PACKET INFO END--\n'
                  decode_option = None
             elif line == b'PGP-BIN\r\n' or line == b'PGP-BIN\n':
-                print("BINARNO")
                 radix64 = False
                 read_option = "rb"
                 ending_line = b'--PACKET INFO END--\n'
@@ -264,9 +245,7 @@ class PGP:
         #unzipping
         if options['zipped']:
             content = zlib.decompress(content)
-            print(f"content after unzip: {content}")
         content = content.decode("utf-8")
-        print(f"content: {content}\n")
 
         #signing
         content_rows = content.split("\n")
@@ -277,9 +256,6 @@ class PGP:
             signature = content_rows[2].split(":")[1]
             timestamp = content_rows[4].split(":")[1]
             content = "\n".join(content_rows[6:-1])
-            print(key_id)
-            print(signature)
-            print(content)
             verified = self.verify_signature(key_id, signature, content)
         else:
             # now reading the timestamp
@@ -328,37 +304,14 @@ class PGP:
 
     # Export and import of keys
     def export_public_key_PEM(self, key_id, filename):
-        key_row = None
-        for item in self.public_key_ring:
-            if item["KeyID"] == key_id:
-                key_row = item
-                break
-
-        if key_row is None:
-            raise Exception("Public key does not exist")
-
+        key_row = self.find_public_row(key_id)
         rsa_public_key = RSA.importKey(key_row["PublicKey"])
 
         with open(filename, "wb") as f:
             f.write(rsa_public_key.exportKey("PEM"))
 
     def export_private_key_PEM(self, key_id, filename, password):
-        key_row = None
-        for item in self.private_key_ring:
-            if item["KeyID"] == key_id:
-                key_row = item
-                break
-
-        if key_row is None:
-            raise Exception("Privatni ključ ne postoji")
-
-        password_digest = hashlib.sha1(password.encode("utf-8")).digest()
-        cast_key = password_digest[0:16]
-
-        cast_cipher = CAST.new(cast_key, CAST.MODE_ECB)
-        dec_private_key = unpad(cast_cipher.decrypt(key_row["EncPrivateKey"]), CAST.block_size)
-
-        rsa_private_key = RSA.importKey(dec_private_key)
+        rsa_private_key, row = self.decypt_private_key(password, key_id)
 
         with open(filename, "wb") as f:
             f.write(rsa_private_key.exportKey("PEM"))
@@ -440,8 +393,6 @@ class PGP:
         self.private_key_ring = []
         self.public_key_ring = []
 
-
-
         for item in data["private_key_ring"]:
             self.private_key_ring.append({
                 "Timestamp": item["Timestamp"],
@@ -505,3 +456,4 @@ if __name__ == "__main__":
     # print(pgp.private_key_ring[0])
     # print(pgp.private_key_ring[len(pgp.private_key_ring) - 1])
     pass
+
