@@ -95,7 +95,7 @@ class PGP:
                 pk_row = row
                 break
         if pk_row is None:
-            raise Exception("Key does not exist")
+            raise Exception("Privatni ključ ne postoji")
 
         password_hash = hashlib.sha1(options["sign_key_password"].encode("utf-8")).digest()
         cast_key = password_hash[0:16]
@@ -104,8 +104,7 @@ class PGP:
         try:
             rsa_private_key_bytes = unpad(cast_cipher.decrypt(pk_row["EncPrivateKey"]), CAST.block_size)
         except ValueError:
-            print("Incorrect password - noticed due to unpadding issue")
-            return None
+            raise Exception("Pogrešna lozinka - primećeno zbog neodgovarajučeg padding-a")
 
         rsa_private_key = RSA.importKey(rsa_private_key_bytes)
 
@@ -303,7 +302,6 @@ class PGP:
         cast_cipher = CAST.new(cast_key, CAST.MODE_ECB)
         enc_private_key = cast_cipher.encrypt(pad(rsa_private_key_bytes, CAST.block_size))
 
-        # TODO Stavi KeyID na HEX -> DONE
         private_key_row = {
             "Timestamp": timestamp,
             "KeyID": key_id,
@@ -345,7 +343,7 @@ class PGP:
         with open(filename, "wb") as f:
             f.write(rsa_public_key.exportKey("PEM"))
 
-    def export_private_key_PEM(self, key_id, password, filename):
+    def export_private_key_PEM(self, key_id, filename, password):
         key_row = None
         for item in self.private_key_ring:
             if item["KeyID"] == key_id:
@@ -353,7 +351,7 @@ class PGP:
                 break
 
         if key_row is None:
-            raise Exception("Private key does not exist")
+            raise Exception("Privatni ključ ne postoji")
 
         password_digest = hashlib.sha1(password.encode("utf-8")).digest()
         cast_key = password_digest[0:16]
@@ -366,11 +364,59 @@ class PGP:
         with open(filename, "wb") as f:
             f.write(rsa_private_key.exportKey("PEM"))
 
-    def import_public_key_PEM(self, key_filename_PEM):
-        pass
+    def import_public_key_PEM(self, key_filename_PEM, username, email):
+        try:
+            with open(key_filename_PEM, "rb") as f:
+                rsa_key = RSA.import_key(f.read())
+        except FileNotFoundError:
+            raise Exception("File does not exist")
+        except ValueError or TypeError or IndexError:
+            raise Exception("Invalid file format")
 
-    def import_private_key_PEM(self, key_filename_PEM, password):
-        pass
+
+        rsa_key.size_in_bits()
+        key_id = hex(rsa_key.n & 0xFFFFFFFFFFFFFFFF)
+
+        imported_key = {
+            "Timestamp": int(time.time()),
+            "KeyID": key_id,
+            "UserEmail": email,
+            "Username": username,
+            "PublicKey": rsa_key.public_key().exportKey(),
+            "Length": rsa_key.size_in_bits()
+        }
+
+        self.public_key_ring.append(imported_key)
+
+    def import_private_key_PEM(self, key_filename_PEM, username, email, password):
+        try:
+            with open(key_filename_PEM, "rb") as f:
+                rsa_key = RSA.import_key(f.read())
+        except FileNotFoundError:
+            raise Exception("File does not exist")
+        except ValueError or TypeError or IndexError:
+            raise Exception("Invalid file format")
+
+        rsa_key.size_in_bits()
+        key_id = hex(rsa_key.n & 0xFFFFFFFFFFFFFFFF)
+
+        password_digest = hashlib.sha1(password.encode("utf-8")).digest()
+        cast_key = password_digest[0:16]
+
+        cast_cipher = CAST.new(cast_key, CAST.MODE_ECB)
+        enc_private_key = cast_cipher.encrypt(pad(rsa_key.exportKey(), CAST.block_size))
+
+        imported_key = {
+            "Timestamp": int(time.time()),
+            "KeyID": key_id,
+            "UserEmail": email,
+            "Username": username,
+            "PublicKey": rsa_key.public_key().exportKey(),
+            "EncPrivateKey": enc_private_key,
+            "Length": rsa_key.size_in_bits()
+        }
+
+        self.private_key_ring.append(imported_key)
 
     # Key loading and saving from file
     def load_key_rings(self, filename=".key_storage.json"):
@@ -443,7 +489,11 @@ class PGP:
 
 if __name__ == "__main__":
     # pgp = PGP()
-    # pgp.export_public_key_PEM(2047129769686152487, "public_key.pem")
-    # pgp.export_private_key_PEM(2047129769686152487, "Lozinka", "private_key.pem")
+    # for item in pgp.private_key_ring:
+    #     print(item)
+    # pgp.export_private_key_PEM(pgp.private_key_ring[0]["KeyID"], "PGP_Files/test_private_export.pem", "a")
+    # pgp.import_private_key_PEM("PGP_Files/test_private_export.pem", "test", "test@gmail.com", "abc")
+    # print('\n')
+    # print(pgp.private_key_ring[0])
+    # print(pgp.private_key_ring[len(pgp.private_key_ring) - 1])
     pass
-

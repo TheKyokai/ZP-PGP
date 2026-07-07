@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, simpledialog
+from tkinter import ttk, filedialog, simpledialog, messagebox
 
 from Crypto.PublicKey import RSA
 
@@ -34,6 +34,9 @@ class App:
         self.configure_receive_tab()
         self.configure_public_ring_tab()
         self.configure_private_ring_tab()
+
+        self.selected_key_pair = None
+        self.selected_public_key = None
 
     def choose_file(self):
         filename = filedialog.askopenfilename(title="Izaberi fajl")
@@ -222,7 +225,7 @@ class App:
         self.send_text_area.pack(fill="both", expand=True)
 
         # Bottom panel contents
-        send_button = ttk.Button(bottom_panel, text="Pošalji", command=self.send_message)
+        send_button = ttk.Button(bottom_panel, text="Pošaljite", command=self.send_message)
         send_button.pack(side="right", padx=10)
 
     def update_key_options(self):
@@ -230,10 +233,10 @@ class App:
         public_keys = []
 
         for row in self.pgp.private_key_ring:
-            private_keys.append(row["KeyID"])
+            private_keys.append(row["Username"] + "---" + row["KeyID"])
 
         for row in self.pgp.public_key_ring:
-            public_keys.append(row["KeyID"])
+            public_keys.append(row["Username"] + "---" + row["KeyID"])
 
         self.sign_private_key_options.configure(values=private_keys if len(private_keys) > 0 else [""])
         self.sign_private_key_options.current(0)
@@ -243,36 +246,54 @@ class App:
     def send_message(self):
         content = self.send_text_area.get("1.0", "end").strip()
 
-        # TODO Dodaj neke error poruke
-        if self.send_encrypt_bool.get() and not self.encrypt_public_key_options.get():
-            return # No key selected
+        try:
+            # TODO Dodaj neke error poruke
+            if self.send_encrypt_bool.get() and not self.encrypt_public_key_options.get():
+                raise Exception("Nije izabran ključ za enkripciju")
 
-        if self.send_sign_bool.get() and not self.sign_private_key_options.get():
-            return # No key selected
+            if self.send_sign_bool.get() and not self.sign_private_key_options.get():
+                raise Exception("Nije izabran ključ za potpisivanje")
 
-        password = None
-        if self.send_sign_bool.get():
-            password = self.prompt_password()
+            password = None
+            if self.send_sign_bool.get():
+                password = self.prompt_password()
 
-            if password is None:
-                return
+                if password is None:
+                    return # Not error - User opted out of sending
 
-        filename = self.choose_send_destination()
-        if filename is None:
-            return
+            filename = self.choose_send_destination()
+            if filename is None:
+                return # Not error - User opted out of sending
 
-        options = {
-            "sign": self.send_sign_bool.get(),
-            "sign_key": self.sign_private_key_options.get() if self.send_sign_bool.get() else None,
-            "sign_key_password": password,
-            "zip": self.send_zip_bool.get(),
-            "encrypt": self.send_encrypt_bool.get(),
-            "enc_public_key": self.encrypt_public_key_options.get() if self.send_encrypt_bool.get() else None,
-            "enc_algorithm": self.send_enc_algorithm.get() if self.send_encrypt_bool.get() else None,
-            "radix64": self.send_radix64_bool.get(),
-        }
+            sign_key = self.sign_private_key_options.get() if self.send_sign_bool.get() else None
+            if sign_key is not None:
+                sign_key = sign_key.strip().split("---")
+                sign_key = sign_key[len(sign_key) - 1]
 
-        self.pgp.send_message(content, options, filename)
+            enc_key = self.encrypt_public_key_options.get() if self.send_encrypt_bool.get() else None
+            if enc_key is not None:
+                enc_key = enc_key.strip().split("---")
+                enc_key = enc_key[len(enc_key) - 1]
+
+            options = {
+                "sign": self.send_sign_bool.get(),
+                "sign_key": sign_key,
+                "sign_key_password": password,
+                "zip": self.send_zip_bool.get(),
+                "encrypt": self.send_encrypt_bool.get(),
+                "enc_public_key": enc_key,
+                "enc_algorithm": self.send_enc_algorithm.get() if self.send_encrypt_bool.get() else None,
+                "radix64": self.send_radix64_bool.get(),
+            }
+
+
+            send_status = self.pgp.send_message(content, options, filename)
+
+            if send_status:
+                self.report_success("Poruka je uspešno poslata (fajl sačuvan).")
+
+        except Exception as e:
+            self.report_error(e)
 
     def prompt_password(self, prompt_text="Unesite lozinku za privatni ključ:"):
         password = simpledialog.askstring(
@@ -290,6 +311,21 @@ class App:
             defaultextension=".pgp",
             filetypes=[
                 ("PGP files", "*.pgp"),
+                ("All files", "*.*")
+            ]
+        )
+        if not filename:
+            return None
+
+        return filename
+
+    def choose_export_destination(self):
+        filename = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="Izaberite destinaciju za eksport",
+            defaultextension=".pem",
+            filetypes=[
+                ("PEM files", "*.pem"),
                 ("All files", "*.*")
             ]
         )
@@ -323,6 +359,8 @@ class App:
     def  show_private_key(self, values):
         pass
 
+
+    # TODO Cini mi se da fali update kljuceva u tabelama ako se generise nov ili izbrise
     def show_private_keys(self):
         table = ttk.Treeview(
             self.private_key_bottom_panel,
@@ -339,6 +377,8 @@ class App:
 
         table.grid(row=0, column=0)
 
+        # TODO Ovo se menja da bi radio export kako treba, mozes da koristis i za brisanje
+        self.selected_key_pair = None
 
         for row in self.pgp.private_key_ring:
             if row["Username"] == self.name_entry.get() and row["UserEmail"] == self.email_entry.get():
@@ -348,6 +388,9 @@ class App:
         def private_table_click_detected(event):
             item = table.identify_row(event.y)
             column = table.identify_column(event.x)
+
+            # TODO Update je ovde
+            self.selected_key_pair = table.item(item)["values"][2]
 
             if column == "#5":
                 print("BRISANJE:", table.item(item)["values"])
@@ -375,9 +418,18 @@ class App:
 
         table.grid(row=1, column=0, sticky="nsew", columnspan=2)
 
+        self.selected_public_key = None
+
         for row in self.pgp.public_key_ring:
             key= RSA.importKey(row["PublicKey"])
             table.insert("", tk.END, values=(row["Username"], row["UserEmail"], row["KeyID"], row["Length"], key.n, key.e))
+
+        def public_table_click_detected(event):
+            item = table.identify_row(event.y)
+            self.selected_public_key = table.item(item)["values"][2]
+            print(self.selected_public_key)
+
+        table.bind("<Button-1>", public_table_click_detected)
 
     def configure_public_ring_tab(self):
 
@@ -392,16 +444,16 @@ class App:
         import_keys_button = ttk.Button(
             public_ring_container,
             padding=10,
-            text="Uvezi ključeve"
-            #TODO dodati komandu i funkciju
+            text="Uvezite ključ",
+            command=self.import_public_key
         )
         import_keys_button.grid(row=0, column=0)
 
         export_keys_button = ttk.Button(
             public_ring_container,
             padding=10,
-            text="Izvezi ključeve"
-            # TODO dodati komandu i funkciju
+            text="Izvezite ključ",
+            command=self.export_public_key
         )
         export_keys_button.grid(row=0, column=1)
 
@@ -471,6 +523,21 @@ class App:
         )
         generate_key_button.grid(row=4, column=0, sticky="w")
 
+        # Export and import buttons
+        import_key_pair_button = ttk.Button(
+            top_right_panel,
+            text="Uvezite par ključeva",
+            command=self.import_key_pair
+        )
+        import_key_pair_button.grid(row=2, column=1, sticky="e")
+
+        export_key_pair_button = ttk.Button(
+            top_right_panel,
+            text="Izvezite par ključeva",
+            command=self.export_key_pair
+        )
+        export_key_pair_button.grid(row=3, column=1, sticky="e")
+
         #Show private ring button
         show_button = ttk.Button(
             top_left_panel,
@@ -498,11 +565,58 @@ class App:
 
         self.update_key_options()
 
+
+    def report_error(self, error_msg):
+        messagebox.showerror("Greška", error_msg)
+
+    def report_success(self, msg):
+        messagebox.showinfo("Uspeh", msg)
+
+    #TODO
+    def import_public_key(self):
+        print("Public import")
+
+    def import_key_pair(self):
+        print("Pair import")
+
+    def export_public_key(self):
+        try:
+            if self.selected_public_key is None:
+                raise Exception("Nije izabran ključ za izvoz")
+
+            filename = self.choose_export_destination()
+            if filename is None:
+                return
+
+            self.pgp.export_public_key_PEM(self.selected_public_key, filename)
+            self.report_success("Javni ključ je uspešno izvezen")
+        except Exception as e:
+            self.report_error(e)
+
+    def export_key_pair(self):
+        try:
+            if self.selected_key_pair is None:
+                raise Exception("Nije izabran ključ za izvoz")
+
+            filename = self.choose_export_destination()
+            if filename is None:
+                return
+
+            password = self.prompt_password()
+            if password is None:
+                return
+
+            self.pgp.export_private_key_PEM(self.selected_key_pair, filename, password)
+            self.report_success("Par ključeva je uspešno izvezen")
+        except Exception as e:
+            self.report_error(e)
+
     def start(self):
         self.root.mainloop()
         self.pgp.save_key_rings()
 
 
+# TODO Connect the back for key import (username, email for both - +password for pair)
 if __name__ == "__main__":
     app = App()
     app.start()
