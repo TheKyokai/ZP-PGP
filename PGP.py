@@ -249,19 +249,24 @@ class PGP:
         signer_username = None
         signer_email = None
         #first have to parse for signing options
+        signature_data = {}
+        message_row = None
+        for row in content_rows:
+            data = row.split(":")
+            if len(data) < 2:
+                if row == "--MESSAGE CONTENTS--":
+                    message_row = content_rows.index(row) + 1
+                continue
+            signature_data[data[0].lower()] = data[1]
+        timestamp = signature_data["timestamp"]
+        content = "\n".join(content_rows[message_row:-1])
         if options['signed']:
-            key_id = content_rows[1].split(":")[1]
-            signature = content_rows[2].split(":")[1]
-            timestamp = content_rows[4].split(":")[1]
-            content = "\n".join(content_rows[6:-1])
+            key_id = signature_data["key_id"]
+            signature = signature_data["sig"]
             verified = self.verify_signature(key_id, signature, content)
             signer_info = self.find_public_row(key_id)
             signer_username = signer_info["Username"]
             signer_email = signer_info["UserEmail"]
-        else:
-            # now reading the timestamp
-            timestamp = content.split("\n")[0].split(":")[1]
-            content = "\n".join(content_rows[2:-1])
         return content, verified, timestamp, signer_username, signer_email
 
     def generate_key_pair(self, name, email, password, length):

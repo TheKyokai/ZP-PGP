@@ -104,7 +104,7 @@ class App:
                 verification_message = f"Verifikovan potpis korisnika:\n {signer_username} ({signer_email})"
             else:
                 bg_color = "#FA918F"
-                verification_message = f"Nevažeći potpis korisnika {signer_username} ({signer_email})"
+                verification_message = f"Nevažeći potpis korisnika:\n {signer_username} ({signer_email})"
 
             self.content = formatted + "\n" + self.content
 
@@ -461,10 +461,8 @@ class App:
             print(private_key.d)
             print(private_key.n)
             popup.title("Privatni kljuc")
-            popup.geometry("710x200")
-            ttk.Label(popup, text="ID kljuca: ").grid(column=0, row=1)
-            ttk.Label(popup, text = values[2]).grid(column=1, row=1, sticky = "w")
-            ttk.Label(popup, text = "d").grid(column=0, row=2)
+            popup.geometry("710x300")
+
 
             #formatting d and n
             hex_d = hex(private_key.d)
@@ -479,7 +477,16 @@ class App:
                 body[i:i + 64]
                 for i in range(0, len(body), 64)
             )
+            hex_e = hex(private_key.e)
+            body = hex_e[2:]
+            formatted_e = "0x" + "\n".join(
+                body[i:i + 64]
+                for i in range(0, len(body), 64)
+            )
 
+            ttk.Label(popup, text="ID kljuca: ").grid(column=0, row=1)
+            ttk.Label(popup, text=values[2]).grid(column=1, row=1, sticky="w")
+            ttk.Label(popup, text="d").grid(column=0, row=2)
             d_text = tk.Text(popup, height=3,  wrap = "char")
             d_text.grid(column=1, row=2, sticky = "w", pady = 10)
             d_text.insert(tk.INSERT, formatted_d)
@@ -489,6 +496,11 @@ class App:
             n_text.grid(column=1, row=4, sticky="w", pady = 10)
             n_text.insert(tk.INSERT, formatted_n)
             n_text.config(state="disabled")
+            ttk.Label(popup, text="e").grid(column=0, row=6)
+            e_text = tk.Text(popup, height=3, wrap="char")
+            e_text.grid(column=1, row=6, sticky="w", pady=10)
+            e_text.insert(tk.INSERT, formatted_e)
+            e_text.config(state="disabled")
 
         except Exception as e:
             if str(e) == "Incorrect password - noticed due to unpadding issue":
@@ -831,8 +843,10 @@ class App:
         try:
             self.pgp.import_public_key_PEM(filename, username, email)
             self.report_success("Javni ključ je uspešno uvezen")
+            self.show_public_keys(self.public_ring_container)
         except Exception as e:
             self.report_error(e)
+
 
     def import_key_pair(self):
         filename = self.choose_PEM_key()
@@ -851,6 +865,7 @@ class App:
         try:
             self.pgp.import_private_key_PEM(filename, username, email, password)
             self.report_success("Par ključeva je uspešno uvezen")
+            self.show_private_keys()
         except Exception as e:
             self.report_error(e)
 
