@@ -89,7 +89,7 @@ class PGP:
     def generate_signature(self, message, options):
         digest = hashlib.sha1(message.encode("utf-8")).digest()
 
-        rsa_private_key, row = self.decypt_private_key(options["sign_key_password"], options["sign_key"])
+        rsa_private_key, row = self.decrypt_private_key(options["sign_key_password"], options["sign_key"])
 
         signature = pow(int.from_bytes(digest), rsa_private_key.d, rsa_private_key.n)
         return {"signature": signature, "KeyID": options["sign_key"]}
@@ -153,7 +153,7 @@ class PGP:
             raise Exception("Javni ključ ne postoji")
         return public_row
 
-    def decypt_private_key(self, password, keyID):
+    def decrypt_private_key(self, password, keyID):
         private_row = None
         for item in self.private_key_ring:
             if item["KeyID"] == keyID:
@@ -178,7 +178,7 @@ class PGP:
     def decrypt_message(self, message, options, password):
 
         #finding the private key for decrypting
-        rsa_private_key, row = self.decypt_private_key(password, options["key_id"])
+        rsa_private_key, row = self.decrypt_private_key(password, options["key_id"])
 
         # now the session key can be decrypted
         enc_session_key = options["encrypted_session_key"]
@@ -312,7 +312,7 @@ class PGP:
             f.write(rsa_public_key.exportKey("PEM"))
 
     def export_private_key_PEM(self, key_id, filename, password):
-        rsa_private_key, row = self.decypt_private_key(password, key_id)
+        rsa_private_key, row = self.decrypt_private_key(password, key_id)
 
         with open(filename, "wb") as f:
             f.write(rsa_private_key.exportKey("PEM"))

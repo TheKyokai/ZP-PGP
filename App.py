@@ -1,6 +1,7 @@
 import tkinter as tk
 from datetime import datetime
 from tkinter import ttk, filedialog, simpledialog, messagebox
+from tkinter.scrolledtext import ScrolledText
 
 from Crypto.PublicKey import RSA
 
@@ -100,7 +101,7 @@ class App:
                 verification_message = f"Poruka nije potpisana"
             elif verified:
                 bg_color = "#C3FCBB"
-                verification_message = f"Verifikovan potpis korisnika {signer_username} ({signer_email})"
+                verification_message = f"Verifikovan potpis korisnika:\n {signer_username} ({signer_email})"
             else:
                 bg_color = "#FA918F"
                 verification_message = f"Nevažeći potpis korisnika {signer_username} ({signer_email})"
@@ -113,7 +114,7 @@ class App:
             self.message_text.config(state="disabled")
 
             if self.verified_check is None:
-                self.verified_check = tk.Text(self.decrypt_option_panel, state="disabled", bg=bg_color, height = 1, width = 10)
+                self.verified_check = ScrolledText(self.decrypt_option_panel, state="disabled", bg=bg_color, height = 1, width = 10)
             else:
                 self.verified_check.config(bg=bg_color)
             self.verified_check.config(state="normal")
@@ -397,7 +398,7 @@ class App:
 
     def delete_private_key(self):
         password = self.prompt_password()
-        private_key, row = self.pgp.decypt_private_key(password, self.selected_key_pair)
+        private_key, row = self.pgp.decrypt_private_key(password, self.selected_key_pair)
         self.pgp.private_key_ring.remove(row)
         self.show_private_keys()
         self.selected_key_pair = None
@@ -455,21 +456,39 @@ class App:
         try:
             password = self.prompt_password()
             popup = tk.Toplevel(self.root)
-            private_key, row = self.pgp.decypt_private_key(password, values[2])
+            private_key, row = self.pgp.decrypt_private_key(password, values[2])
             print(private_key)
             print(private_key.d)
             print(private_key.n)
             popup.title("Privatni kljuc")
-            popup.geometry("700x100")
+            popup.geometry("710x200")
             ttk.Label(popup, text="ID kljuca: ").grid(column=0, row=1)
             ttk.Label(popup, text = values[2]).grid(column=1, row=1, sticky = "w")
             ttk.Label(popup, text = "d").grid(column=0, row=2)
-            d_text = tk.Text(popup, height=3, width = 2,  wrap = "char")
-            d_text.grid(column=1, row=2, sticky = "snew")
-            d_text.insert(tk.INSERT, hex(private_key.d))
+
+            #formatting d and n
+            hex_d = hex(private_key.d)
+            body = hex_d[2:]
+            formatted_d = "0x" + "\n".join(
+                body[i:i + 64]
+                for i in range(0, len(body), 64)
+            )
+            hex_n = hex(private_key.n)
+            body = hex_n[2:]
+            formatted_n = "0x" + "\n".join(
+                body[i:i + 64]
+                for i in range(0, len(body), 64)
+            )
+
+            d_text = tk.Text(popup, height=3,  wrap = "char")
+            d_text.grid(column=1, row=2, sticky = "w", pady = 10)
+            d_text.insert(tk.INSERT, formatted_d)
             d_text.config(state="disabled")
-            ttk.Label(popup, text = "n").grid(column=0, row=4)
-            ttk.Label(popup, text = hex(private_key.n)).grid(column=1, row=4, rowspan = 2)
+            ttk.Label(popup, text="n").grid(column=0, row=4)
+            n_text = tk.Text(popup, height=3, wrap="char")
+            n_text.grid(column=1, row=4, sticky="w", pady = 10)
+            n_text.insert(tk.INSERT, formatted_n)
+            n_text.config(state="disabled")
 
         except Exception as e:
             if str(e) == "Incorrect password - noticed due to unpadding issue":
@@ -481,7 +500,7 @@ class App:
     def show_private_keys(self):
         table = ttk.Treeview(
             self.private_key_bottom_panel,
-            columns=("name", "email", "keyid", "enc", "delete", "show"),
+            columns=("name", "email", "keyid","show"),
             show="headings"
         )
 
@@ -490,7 +509,7 @@ class App:
         table.heading("keyid", text="Key ID")
         table.heading("show", text="")
 
-        table.grid(row=0, column=0)
+        table.grid(row=0, column=0,sticky="nsew")
 
         self.selected_key_pair = None
 
@@ -590,27 +609,28 @@ class App:
         pr_container = ttk.Frame(self.private_ring_tab)
         pr_container.pack(fill="both", expand=True)
 
-        pr_container.columnconfigure(0, weight=1)
         pr_container.rowconfigure(0, weight=1)
-        pr_container.rowconfigure(1, weight=2)
+        pr_container.rowconfigure(1, weight=5)
+        pr_container.columnconfigure(0, weight=1)
 
         # Control panel
         top_panel = ttk.Frame(pr_container)
         top_panel.grid(row=0, column=0, sticky="nsew")
-        top_panel.columnconfigure(0, weight=1)
+        top_panel.columnconfigure(0, weight=4)
         top_panel.columnconfigure(1, weight=1)
-        top_panel.rowconfigure(0, weight=1)
 
         # Bottom panel
         self.private_key_bottom_panel = ttk.Frame(pr_container)
         self.private_key_bottom_panel.grid(row=1, column=0, sticky="nsew")
+        self.private_key_bottom_panel.rowconfigure(0, weight=1)
+        self.private_key_bottom_panel.columnconfigure(0, weight=1)
 
         # Control panel content
         top_left_panel = ttk.Frame(top_panel)
         top_left_panel.grid(row=0, column=0, sticky="nsew")
 
         top_right_panel = ttk.Frame(top_panel)
-        top_right_panel.grid(row=0, column=1, sticky="nsew")
+        top_right_panel.grid(row=0, column=1, sticky="nsew", padx = 50)
 
         # Name and email
         top_left_panel.columnconfigure(0, weight=1)
@@ -626,53 +646,60 @@ class App:
         # Key size
         self.key_size_var = tk.IntVar(value=2048)
 
-        ttk.Label(top_right_panel, text="Veličina ključa:").grid(row=1, column=0, sticky="w")
+        ttk.Label(top_right_panel, text="Veličina ključa:").grid(row=0, column=0, sticky="w")
         ttk.Radiobutton(
             top_right_panel,
             text="1024",
             variable=self.key_size_var,
             value=1024
-        ).grid(row=2, column=0, sticky="w")
+        ).grid(row=1, column=0, sticky="w")
 
         ttk.Radiobutton(
             top_right_panel,
             text="2048",
             variable=self.key_size_var,
             value=2048
-        ).grid(row=3, column=0, sticky="w")
+        ).grid(row=2, column=0, sticky="w")
 
 
         # Generate button
         generate_key_button = ttk.Button(
             top_right_panel,
             text="Generišite ključ",
-            command=self.generate_key
+            command=self.generate_key,
+            padding = 5
         )
-        generate_key_button.grid(row=4, column=0, sticky="w")
+        generate_key_button.grid(row=3, column=0, sticky="w")
 
         # Export and import buttons
         import_key_pair_button = ttk.Button(
             top_right_panel,
             text="Uvezite par ključeva",
-            command=self.import_key_pair
+            command=self.import_key_pair,
+            padding = 5,
+            width = 50
         )
-        import_key_pair_button.grid(row=2, column=1, sticky="e")
+        import_key_pair_button.grid(row=1, column=2, sticky="e", padx = 80)
 
         export_key_pair_button = ttk.Button(
             top_right_panel,
             text="Izvezite par ključeva",
-            command=self.export_key_pair
+            command=self.export_key_pair,
+            padding = 5,
+            width = 50
         )
-        export_key_pair_button.grid(row=3, column=1, sticky="e")
+        export_key_pair_button.grid(row=2, column=2, sticky="e", padx = 80)
 
         #delete key pair button
 
         delete_key_pair_button = ttk.Button(
             top_right_panel,
             text="Izbrisite odabrani kljuc",
-            command=self.delete_private_key_popup
+            command=self.delete_private_key_popup,
+            padding = 5,
+            width = 50
         )
-        delete_key_pair_button.grid(row=4, column=1, sticky="e")
+        delete_key_pair_button.grid(row=3, column=2, sticky="e", padx = 80)
 
         self.show_private_keys()
 
