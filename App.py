@@ -401,6 +401,8 @@ class App:
 
     def delete_private_key(self):
         password = self.prompt_password()
+        if password is None:
+            return
         private_key, row = self.pgp.decrypt_private_key(password, self.selected_key_pair)
         self.pgp.private_key_ring.remove(row)
         self.show_private_keys()
@@ -460,6 +462,8 @@ class App:
     def show_private_key(self, values):
         try:
             password = self.prompt_password()
+            if password is None:
+                return
             popup = tk.Toplevel(self.root)
             private_key, row = self.pgp.decrypt_private_key(password, values[2])
             popup.title("Privatni kljuc")
