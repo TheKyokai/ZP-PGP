@@ -411,7 +411,7 @@ class App:
 
     def delete_public_key_popup(self):
         popup = tk.Toplevel(self.root)
-        popup.geometry("400x300")
+        popup.geometry("400x200")
 
         if self.selected_key_pair is None and self.selected_public_key is None:
             self.report_error("Nije odabran nijedan kljuc")
@@ -429,13 +429,13 @@ class App:
         ttk.Label(popup, text=self.selected_key_pair).pack()
         ttk.Label(popup, text="Da li ste sigurni da zelite da izbrisete kljuc?").pack()
         ttk.Button(
-            popup, padding = 10, text = "DA", command = delete_confirmed).pack(side = tk.LEFT)
+            popup, padding=10, text="DA", command=delete_confirmed).pack(side=tk.LEFT, padx=50)
         ttk.Button(
-            popup, padding=10, text="NE", command=delete_canceled).pack(side = tk.RIGHT)
+            popup, padding=10, text="NE", command=delete_canceled).pack(side=tk.RIGHT, padx=50)
 
     def delete_private_key_popup(self):
         popup = tk.Toplevel(self.root)
-        popup.geometry("400x300")
+        popup.geometry("400x200")
 
         if self.selected_key_pair is None and self.selected_public_key is None:
             self.report_error("Nije odabran nijedan kljuc")
@@ -453,9 +453,9 @@ class App:
         ttk.Label(popup, text=self.selected_key_pair).pack()
         ttk.Label(popup, text="Da li ste sigurni da zelite da izbrisete kljuc?").pack()
         ttk.Button(
-            popup, padding = 10, text = "DA", command = delete_confirmed).pack(side = tk.LEFT)
+            popup, padding = 10, text = "DA", command = delete_confirmed).pack(side = tk.LEFT, padx = 50)
         ttk.Button(
-            popup, padding=10, text="NE", command=delete_canceled).pack(side = tk.RIGHT)
+            popup, padding=10, text="NE", command=delete_canceled).pack(side = tk.RIGHT, padx = 50)
 
     def show_private_key(self, values):
         try:
