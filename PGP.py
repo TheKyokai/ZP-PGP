@@ -236,6 +236,8 @@ class PGP:
         if options["encrypted"]:
             key_row = self.find_public_row(options['key_id'])
             password = app.prompt_password(f"Unesite lozinku za privatni ključ {key_row['Username']} --- {key_row['KeyID']}:")
+            if password is None:
+                return None, None, None, None, None
             content = self.decrypt_message(content, options, password)
 
         #unzipping

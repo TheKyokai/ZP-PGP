@@ -77,7 +77,6 @@ class App:
         if filename is None:
             self.report_error("Nije odabran fajl za cuvanje poruke")
         with open(filename, "w") as file:
-            print("CONTENT" , self.content)
             file.write(self.content)
             self.report_success("Poruka je uspesno sacuvana")
         return
@@ -92,6 +91,8 @@ class App:
 
         try:
             decrypted_message, verified, timestamp, signer_username, signer_email = self.pgp.receive_message(self.file, self)
+            if decrypted_message is None:
+                return
             self.content = decrypted_message
             date = datetime.fromtimestamp(int(timestamp))
             formatted = date.strftime("%d.%m.%Y. %H:%M:%S")
@@ -396,6 +397,8 @@ class App:
         self.selected_public_key = None
         self.report_success("Uspesno je izbrisan javni kljuc")
 
+        self.update_key_options()
+
     def delete_private_key(self):
         password = self.prompt_password()
         private_key, row = self.pgp.decrypt_private_key(password, self.selected_key_pair)
@@ -403,6 +406,8 @@ class App:
         self.show_private_keys()
         self.selected_key_pair = None
         self.report_success("Uspesno je izbrisan privatni kljuc")
+
+        self.update_key_options()
 
     def delete_public_key_popup(self):
         popup = tk.Toplevel(self.root)
@@ -457,9 +462,6 @@ class App:
             password = self.prompt_password()
             popup = tk.Toplevel(self.root)
             private_key, row = self.pgp.decrypt_private_key(password, values[2])
-            print(private_key)
-            print(private_key.d)
-            print(private_key.n)
             popup.title("Privatni kljuc")
             popup.geometry("710x300")
 
@@ -503,10 +505,7 @@ class App:
             e_text.config(state="disabled")
 
         except Exception as e:
-            if str(e) == "Incorrect password - noticed due to unpadding issue":
-                self.report_error("Pogresna lozinka za dekriptovanje kljuca")
-            else:
-                print(str(e))
+            self.report_error(e)
         return
 
     def show_private_keys(self):
@@ -534,11 +533,9 @@ class App:
             if not item:
                 return
 
-            # TODO Update je ovde
             self.selected_key_pair = table.item(item)["values"][2]
 
             if column == "#4":
-                print("PRIKAZIVANJE:", table.item(item)["values"])
                 self.show_private_key(table.item(item)["values"])
 
         table.bind("<Button-1>", private_table_click_detected)
@@ -575,7 +572,6 @@ class App:
                 return
 
             self.selected_public_key = table.item(item)["values"][2]
-            print(self.selected_public_key)
 
         table.bind("<Button-1>", public_table_click_detected)
 
@@ -844,6 +840,7 @@ class App:
             self.pgp.import_public_key_PEM(filename, username, email)
             self.report_success("Javni ključ je uspešno uvezen")
             self.show_public_keys(self.public_ring_container)
+            self.update_key_options()
         except Exception as e:
             self.report_error(e)
 
@@ -866,6 +863,7 @@ class App:
             self.pgp.import_private_key_PEM(filename, username, email, password)
             self.report_success("Par ključeva je uspešno uvezen")
             self.show_private_keys()
+            self.update_key_options()
         except Exception as e:
             self.report_error(e)
 
@@ -908,7 +906,6 @@ class App:
         self.pgp.save_key_rings()
 
 
-# TODO Connect the back for key import (username, email for both - +password for pair)
 if __name__ == "__main__":
     app = App()
     app.start()
